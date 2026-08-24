@@ -202,6 +202,13 @@
   .cands div { padding-left: 10px; }
 
   .stream-err { color: var(--red); font-size: 0.78rem; display: block; margin-top: 6px; }
+  .timing {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 7px;
+    font-variant-numeric: tabular-nums;
+    cursor: help;
+  }
   .cursor::after {
     content: "\258B";
     animation: blink 1s steps(2, start) infinite;
@@ -540,6 +547,16 @@
     return node;
   }
 
+  const BENGALI_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+
+  function toBengaliDigits(str) {
+    return String(str).replace(/[0-9]/g, (d) => BENGALI_DIGITS[+d]);
+  }
+
+  function formatSeconds(ms) {
+    return toBengaliDigits((ms / 1000).toFixed(1));
+  }
+
   const nearBottom = () =>
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 70;
 
@@ -591,6 +608,11 @@
     let chip = null;
     let answerStarted = false;
     let toolRan = false;
+
+    // Timing, so the wait after a tool call is visible rather than a mystery.
+    const startedAt = performance.now();
+    let toolResultAt = null;
+    let firstTokenAt = null;
     let answerRaw = '';
     let failed = false;
 
@@ -636,6 +658,7 @@
         }
 
         case 'tool_result': {
+          toolResultAt = performance.now();
           if (!chip) break;
           chip.classList.remove('running');
           const res = el('span', 'tool-res', chip);
@@ -670,6 +693,7 @@
         case 'token':
           if (!answerStarted) {
             answerStarted = true;
+            firstTokenAt = performance.now();
             collapseThinking();
           }
           answerRaw += ev.text;
@@ -682,12 +706,29 @@
             '⚠ ' + (ev.message || 'stream error');
           break;
 
-        case 'done':
+        case 'done': {
           if (!answerRaw.trim()) {
             answerRaw = ev.reply || '(কোনো উত্তর পাওয়া যায়নি)';
             renderAnswer(answerEl, answerRaw);
           }
+
+          const total = performance.now() - startedAt;
+          const timing = el('div', 'timing', bubble);
+          timing.textContent = '\u23F1 ' + formatSeconds(total) + ' সেকেন্ড';
+
+          // Breakdown on hover: most of a slow turn is the model thinking
+          // after the tool result, which is otherwise invisible.
+          const parts = [];
+          if (toolResultAt !== null) {
+            parts.push('তথ্য খোঁজা: ' + formatSeconds(toolResultAt - startedAt) + ' সে.');
+          }
+          if (firstTokenAt !== null) {
+            parts.push('উত্তর শুরু: ' + formatSeconds(firstTokenAt - startedAt) + ' সে.');
+            parts.push('উত্তর লেখা: ' + formatSeconds(performance.now() - firstTokenAt) + ' সে.');
+          }
+          if (parts.length) timing.title = parts.join(' · ');
           break;
+        }
       }
 
       stickToBottom(wasNear);
