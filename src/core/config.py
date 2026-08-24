@@ -49,7 +49,8 @@ class ChatbotSettings(BaseSettings):
     llama_model: str = Field(
         default="local-model",
         description=(
-            "Model name sent in chat-completion requests " "(llama-server usually ignores it)."
+            "Model name sent in chat-completion requests "
+            "(llama-server usually ignores it)."
         ),
     )
 
@@ -113,7 +114,8 @@ class McpSettings(BaseSettings):
     top_similar_api_url: str = Field(
         default="http://172.31.60.228:8002/ec_bot/top_similar/",
         description=(
-            "POST endpoint returning top-k similar questions " "with tag + cosine_similarity."
+            "POST endpoint returning top-k similar questions "
+            "with tag + cosine_similarity."
         ),
     )
     top_similar_timeout: float = Field(
@@ -154,7 +156,8 @@ class McpSettings(BaseSettings):
     mcp_transport: str = Field(
         default="http",
         description=(
-            "'http' (Streamable HTTP, for Docker/network use) " "or 'stdio' (local MCP clients)."
+            "'http' (Streamable HTTP, for Docker/network use) "
+            "or 'stdio' (local MCP clients)."
         ),
     )
     mcp_host: str = Field(default="0.0.0.0")

@@ -59,7 +59,9 @@ def _fetch_tag_answers() -> dict:
 
     data = response.json()
     if not isinstance(data, dict) or not data:
-        raise ValueError(f"expected a non-empty tag -> answer object, got {type(data).__name__}")
+        raise ValueError(
+            f"expected a non-empty tag -> answer object, got {type(data).__name__}"
+        )
     return data
 
 

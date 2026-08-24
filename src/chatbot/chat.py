@@ -131,7 +131,9 @@ class Chat:
         await self.save()
         return reply_text
 
-    async def stream(self, message: str, params: dict | None = None) -> AsyncIterator[dict]:
+    async def stream(
+        self, message: str, params: dict | None = None
+    ) -> AsyncIterator[dict]:
         """Run one turn, yielding events as they happen so the caller can push
         them to the browser instead of making the user wait for the whole
         answer.
@@ -153,7 +155,9 @@ class Chat:
             streamed_any_token = False
 
             try:
-                stream = await openai_client.chat_completion_stream(self.history, tools=TOOLS)
+                stream = await openai_client.chat_completion_stream(
+                    self.history, tools=TOOLS
+                )
                 async for chunk in stream:
                     if not chunk.choices:
                         continue
@@ -182,7 +186,9 @@ class Chat:
                             if tc.function.arguments:
                                 slot["arguments"] += tc.function.arguments
             except Exception as exc:
-                logger.exception("llama-server stream failed session=%s", self.session_id)
+                logger.exception(
+                    "llama-server stream failed session=%s", self.session_id
+                )
                 if streamed_any_token:
                     yield {"type": "error", "message": str(exc)}
                     reply_text = "".join(content_parts)

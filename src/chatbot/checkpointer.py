@@ -71,7 +71,9 @@ class SqliteCheckpointer:
         try:
             history = json.loads(row[0])
         except json.JSONDecodeError:
-            logger.warning("corrupt checkpoint for session=%s; starting fresh", session_id)
+            logger.warning(
+                "corrupt checkpoint for session=%s; starting fresh", session_id
+            )
             return None
 
         if not isinstance(history, list) or not history:
@@ -95,7 +97,9 @@ class SqliteCheckpointer:
 
     def _delete(self, session_id: str) -> None:
         with self._connect() as connection:
-            connection.execute("DELETE FROM checkpoints WHERE session_id = ?", (session_id,))
+            connection.execute(
+                "DELETE FROM checkpoints WHERE session_id = ?", (session_id,)
+            )
 
     def _purge_expired(self, ttl_minutes: int) -> int:
         """Delete checkpoints untouched for longer than the TTL.
@@ -104,9 +108,13 @@ class SqliteCheckpointer:
         every row shares one format and offset; a string comparison against a
         cutoff built the same way orders correctly.
         """
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)).isoformat()
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
+        ).isoformat()
         with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM checkpoints WHERE updated_at < ?", (cutoff,))
+            cursor = connection.execute(
+                "DELETE FROM checkpoints WHERE updated_at < ?", (cutoff,)
+            )
             return cursor.rowcount
 
     def _count(self) -> int:
