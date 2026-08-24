@@ -35,18 +35,47 @@ services:
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ./static:/app/static:ro
       - chat-sessions:/data
-    ports:
-      - "${PORT:-8000}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       ec-faq-mcp:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8000/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ec-faq-caddy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${PORT:-8000}:80"
+    depends_on:
+      ec-faq-chatbot:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ec-faq-ngrok
+    profiles: [ "public" ]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    command: http caddy:80
+    ports:
+      - "4040:4040"
+    depends_on:
+      - caddy
+    restart: on-failure:3
 
 volumes:
   chat-sessions:

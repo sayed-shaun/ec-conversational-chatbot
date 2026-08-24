@@ -59,6 +59,16 @@ class ChatbotSettings(BaseSettings):
         description="Streamable HTTP endpoint of the EC FAQ MCP server.",
     )
 
+    cors_allow_origins: str = Field(
+        default="*",
+        description=(
+            "Comma-separated origins allowed to call this API cross-origin, "
+            "e.g. when the UI is hosted separately (Vercel) from this "
+            "backend. '*' allows any origin; fine here since no cookies or "
+            "auth headers are used."
+        ),
+    )
+
     max_history_turns: int = Field(
         default=12,
         ge=1,

@@ -151,6 +151,8 @@ ec-faq-chatbot/
 ├── pyproject.toml            # single dependency/build definition for both services
 ├── api.Dockerfile            # chatbot image: FastAPI + OpenAI SDK
 ├── mcp.Dockerfile            # MCP server image
+├── Caddyfile                 # reverse proxy in front of ec-faq-chatbot
+├── vercel.json               # build step for hosting static/index.html on Vercel
 ├── static/
 │   └── index.html            # chat UI: markup, styles, and the SSE
 │                              # streaming client, all in one file
@@ -274,6 +276,65 @@ than publishing a port:
 ```bash
 docker compose exec ec-faq-chatbot curl -s http://ec-faq-mcp:9000/mcp
 ```
+
+## Hosting the UI separately (e.g. on Vercel)
+
+`static/index.html` is a single self-contained file, so it can be deployed
+on its own -- Vercel serves only that file; the backend (this repo's
+`docker compose` stack) keeps running wherever it already runs. Getting a
+page on a different origin to talk to this API needs three things:
+
+1. **The backend must be reachable over HTTPS.** An HTTPS page cannot call
+   a plain HTTP API (the browser blocks it as mixed content). This repo
+   uses [Caddy](https://caddyfile.dev) as the single entry point in front
+   of the chatbot -- see the `caddy` service in `docker-compose.yml` -- and
+   an optional `ngrok` service to tunnel that over HTTPS without needing a
+   domain or certificate yet:
+
+   ```bash
+   # set NGROK_AUTHTOKEN in .env first -- from
+   # https://dashboard.ngrok.com/get-started/your-authtoken
+   docker compose --profile public up -d
+   curl -s http://localhost:4040/api/tunnels | python3 -c \
+     "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
+   ```
+
+   That prints the current public HTTPS URL. On ngrok's free tier it
+   changes every restart, which is exactly why the next step reads it from
+   an environment variable rather than committing it.
+
+2. **`static/index.html`'s `API_BASE` must point at that URL.** The file
+   defaults to `API_BASE = ''` (same-origin), which is what this repo's own
+   `docker compose` deployment needs and must keep working. `vercel.json`
+   patches that one line at Vercel's build time from an `NGROK_URL`
+   environment variable set in the Vercel project settings, so the tunnel
+   URL lives in Vercel's config, never hardcoded in the repo:
+
+   ```json
+   {
+     "buildCommand": "sed -i \"s|const API_BASE = '';|const API_BASE = '$NGROK_URL';|\" static/index.html",
+     "outputDirectory": "static"
+   }
+   ```
+
+   Deploying: connect this repo to a Vercel project, set `NGROK_URL` to the
+   URL from step 1 in that project's Environment Variables, and deploy.
+   Redeploy whenever the tunnel URL changes.
+
+3. **The backend must allow the Vercel origin via CORS.** `CORS_ALLOW_ORIGINS`
+   defaults to `*`, which works immediately but is worth tightening once
+   the Vercel domain is known:
+
+   ```
+   CORS_ALLOW_ORIGINS=https://your-project.vercel.app
+   ```
+
+`ngrok` is intentionally its own compose profile (`--profile public`), off
+by default, so a plain `docker compose up` never depends on an ngrok
+account. `NGROK_AUTHTOKEN` is unset-safe when that profile is inactive; a
+missing or invalid token only surfaces (clearly, from ngrok's own binary)
+when the profile is actually started, and `restart: on-failure:3` caps the
+retries instead of restart-looping forever on a bad token.
 
 ## Testing the MCP tool directly (without the chatbot or llama.cpp)
 

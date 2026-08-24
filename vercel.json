@@ -1,0 +1,4 @@
+{
+  "buildCommand": "sed -i \"s|const API_BASE = '';|const API_BASE = '$NGROK_URL';|\" static/index.html",
+  "outputDirectory": "static"
+}

@@ -340,6 +340,20 @@
   </div>
 
   <script>
+  /*
+   * Base URL of the chatbot API. Empty means same-origin, which is what
+   * this default supports when the page is served by the FastAPI app
+   * itself (StaticFiles at /static) -- leave it as '' for that case.
+   *
+   * When this file is deployed separately (e.g. to Vercel), vercel.json's
+   * buildCommand patches this line at build time from the NGROK_URL
+   * environment variable set in the Vercel project, so the public tunnel
+   * URL never has to be hardcoded or committed. The backend must also
+   * allow the Vercel origin via CORS_ALLOW_ORIGINS and be reachable over
+   * HTTPS, since an HTTPS page cannot call a plain HTTP API.
+   */
+  const API_BASE = '';
+
   function escapeHtml(text) {
     return text
       .replace(/&/g, '&amp;')
@@ -608,7 +622,7 @@
     }
 
     try {
-      const res = await fetch('/api/v1/chat/stream', {
+      const res = await fetch(API_BASE + '/api/v1/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -694,7 +708,7 @@
   resetBtn.addEventListener('click', async () => {
     if (sessionId) {
       try {
-        await fetch('/api/v1/reset', {
+        await fetch(API_BASE + '/api/v1/reset', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ session_id: sessionId }),

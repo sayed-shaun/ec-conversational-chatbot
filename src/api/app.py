@@ -11,12 +11,15 @@ one-way -- api -> chatbot -> core.
 - Mounts the static chat UI at /static, so the page lives at
   /static/index.html and its assets resolve as plain relative paths.
 - Runs a background sweeper that clears finished (idle) conversations.
+- Allows cross-origin requests from CORS_ALLOW_ORIGINS, for a UI hosted
+  separately from this API (e.g. on Vercel).
 """
 
 import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -80,6 +83,14 @@ async def lifespan(application: FastAPI):
 
 def create_app() -> FastAPI:
     application = FastAPI(title="EC FAQ Chatbot", version="1.0.0", lifespan=lifespan)
+
+    origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     application.include_router(v1_router)
 
