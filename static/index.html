@@ -33,7 +33,16 @@
   }
 
   .app {
+    /*
+     * dvh, not vh: on mobile browsers 100vh includes the area behind the
+     * URL bar, so the app renders taller than the visible screen and the
+     * composer at the bottom ends up off-screen -- unreachable, because
+     * html/body have overflow: hidden. dvh tracks the actually-visible
+     * height. The vh line stays first as a fallback for old browsers.
+     */
     height: calc(100vh - 32px);
+    height: calc(100dvh - 32px);
+    height: calc(var(--app-h, 100dvh) - 32px);
     max-width: 860px;
     margin: 16px auto;
     background: var(--panel);
@@ -274,6 +283,8 @@
     .app {
       max-width: 100%;
       height: 100vh;
+      height: 100dvh;
+      height: var(--app-h, 100dvh);
       margin: 0;
       border-radius: 0;
       box-shadow: none;
@@ -286,7 +297,11 @@
       font-size: 16px;
       padding: 12px 14px;
     }
-    .composer { padding: 10px 12px; gap: 8px; }
+    .composer {
+      padding: 10px 12px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom));
+      gap: 8px;
+    }
     .header { padding: 10px 14px; }
   }
 
@@ -763,6 +778,33 @@
   inputEl.addEventListener('input', () => {
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  });
+
+  /* ------------------------------------------------- visible-height sync */
+
+  /*
+   * dvh handles the URL bar, but iOS Safari's on-screen keyboard overlays the
+   * page instead of shrinking dvh, which would leave the composer hidden
+   * behind the keyboard. visualViewport is the only thing that reports the
+   * genuinely visible height in both cases.
+   */
+  function syncAppHeight() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    document.documentElement.style.setProperty('--app-h', vv.height + 'px');
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncAppHeight);
+    window.visualViewport.addEventListener('scroll', syncAppHeight);
+    syncAppHeight();
+  }
+
+  // Keep the latest message in view when the keyboard opens over the page.
+  inputEl.addEventListener('focus', () => {
+    setTimeout(() => {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }, 250);
   });
 
   /* ---------------------------------------------------------- voice input */
