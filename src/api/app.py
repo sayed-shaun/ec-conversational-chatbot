@@ -48,7 +48,11 @@ async def sweep_expired_sessions() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """Prepare the checkpointer, then run the sweeper for the app's lifetime."""
+    """Prepare the checkpointer, then run the sweeper for the app's lifetime.
+
+    Ordering against llama-server is handled declaratively by depends_on /
+    service_healthy in docker-compose.yml, not here.
+    """
     checkpointer.init()
     await checkpointer.purge_expired()
 

@@ -260,9 +260,13 @@ used, or tested, without a web server involved.
 
 
 First start will take a while — the llama.cpp container downloads the GGUF
-model from Hugging Face before it reports healthy (`start_period: 1200s` in
-the healthcheck gives it up to 20 minutes). The chatbot won't start until
-both `ec-faq-llama` and `ec-faq-mcp` report healthy.
+model from Hugging Face before it reports healthy, and the chatbot is gated on
+that via `depends_on: service_healthy`. The healthcheck allows a one-hour
+grace window (`start_period: 3600s`) so a slow download cannot be mistaken for
+a broken service; if the grace window expires first, llama is marked unhealthy
+and `docker compose up` aborts the chatbot with "dependency failed to start".
+The window costs nothing on later starts, since the model is cached in the
+`llama-models` volume and the first successful probe ends the grace period.
 
 Only the chat UI is published on the host. llama.cpp and the MCP server stay
 on the compose network, so nothing unauthenticated is exposed:

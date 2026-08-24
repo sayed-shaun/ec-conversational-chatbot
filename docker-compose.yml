@@ -34,7 +34,14 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 1200s
+      # On a cold start llama-server downloads the GGUF before it answers, and
+      # the chatbot is gated on this healthcheck. A grace window shorter than
+      # the download means the probes start failing, the service is marked
+      # unhealthy, and `docker compose up` aborts the chatbot with
+      # "dependency failed to start". An hour covers a slow link; it costs
+      # nothing once the model is cached in the llama-models volume, because
+      # the first successful probe ends the grace period immediately.
+      start_period: 3600s
 
   ec-faq-mcp:
     build:
