@@ -235,6 +235,40 @@
   .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .send-btn svg { width: 19px; height: 19px; }
 
+  .mic-btn {
+    flex: none;
+    width: 42px; height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--green);
+    cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .mic-btn:hover:not(:disabled) { background: var(--green-soft); }
+  .mic-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .mic-btn svg { width: 19px; height: 19px; }
+  .mic-btn .stop-icon { display: none; }
+  .mic-btn.recording {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .mic-btn.recording .mic-icon { display: none; }
+  .mic-btn.recording .stop-icon { display: block; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 42, 65, 0.45); }
+    50%      { box-shadow: 0 0 0 7px rgba(244, 42, 65, 0); }
+  }
+  .mic-status {
+    font-size: 0.75rem;
+    color: var(--muted);
+    padding: 0 16px 6px;
+    min-height: 1.1em;
+  }
+  .mic-status.error { color: var(--red); }
+
   @media (max-width: 600px) {
     .bubble { max-width: 85%; }
     .app {
@@ -247,6 +281,7 @@
     .icon-btn { width: 44px; height: 44px; }
     .icon-btn svg { width: 20px; height: 20px; }
     .send-btn { width: 44px; height: 44px; }
+    .mic-btn { width: 44px; height: 44px; }
     .composer-input {
       font-size: 16px;
       padding: 12px 14px;
@@ -323,6 +358,8 @@
 
     <main id="messages" class="messages" aria-live="polite"></main>
 
+    <div id="mic-status" class="mic-status" aria-live="polite"></div>
+
     <form id="chat-form" class="composer">
       <textarea
         id="question-input"
@@ -330,6 +367,17 @@
         placeholder="আপনার প্রশ্ন লিখুন..."
         rows="1"
       ></textarea>
+      <button id="mic-btn" class="mic-btn" type="button" aria-label="ভয়েস ইনপুট" title="কথা বলে প্রশ্ন করুন">
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+        <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        </svg>
+      </button>
       <button id="send-btn" class="send-btn" type="submit" aria-label="Send">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="19" x2="12" y2="5"></line>
@@ -464,6 +512,8 @@
   const inputEl = document.getElementById('question-input');
   const sendBtn = document.getElementById('send-btn');
   const resetBtn = document.getElementById('reset-btn');
+  const micBtn = document.getElementById('mic-btn');
+  const micStatus = document.getElementById('mic-status');
 
   let sessionId = localStorage.getItem('ec_faq_session_id') || null;
   let busy = false;
@@ -624,7 +674,17 @@
     try {
       const res = await fetch(API_BASE + '/api/v1/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          /*
+           * ngrok's free tier serves a browser interstitial warning page
+           * (ERR_NGROK_6024) to any request carrying a browser User-Agent,
+           * so every API call from a real browser would get HTML back
+           * instead of JSON. This header opts out. Harmless when API_BASE
+           * is not an ngrok tunnel.
+           */
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({
           session_id: sessionId,
           message: text,
@@ -705,12 +765,138 @@
     inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
   });
 
+  /* ---------------------------------------------------------- voice input */
+
+  let recorder = null;
+  let recordedChunks = [];
+  let recordingStream = null;
+
+  function setMicStatus(text, isError) {
+    micStatus.textContent = text || '';
+    micStatus.classList.toggle('error', !!isError);
+  }
+
+  function stopRecordingStream() {
+    if (recordingStream) {
+      recordingStream.getTracks().forEach((t) => t.stop());
+      recordingStream = null;
+    }
+  }
+
+  async function transcribe(blob) {
+    /*
+     * Caddy proxies /asr* straight to the ASR service, so this only ever
+     * talks to the same origin as the chat API -- no second URL to configure,
+     * and no mixed-content problem when the page is served over HTTPS.
+     */
+    const form = new FormData();
+    const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
+    form.append('file', blob, 'recording.' + ext);
+    form.append('model_type', 'wav2vec2');
+
+    const res = await fetch(API_BASE + '/asr/upload', {
+      method: 'POST',
+      headers: { 'ngrok-skip-browser-warning': 'true' },
+      body: form,
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const data = await res.json();
+    return ((data.output && data.output[0] && data.output[0].source) || '').trim();
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      setMicStatus('এই ব্রাউজারে ভয়েস রেকর্ডিং সমর্থিত নয়।', true);
+      return;
+    }
+    try {
+      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      // Permission denied, or no microphone available.
+      setMicStatus('মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি।', true);
+      return;
+    }
+
+    recordedChunks = [];
+    // Let the browser pick its own container; Safari records mp4, Chrome webm.
+    // The ASR service accepts both, so no conversion is needed.
+    try {
+      recorder = new MediaRecorder(recordingStream);
+    } catch (err) {
+      stopRecordingStream();
+      setMicStatus('রেকর্ডিং শুরু করা যায়নি।', true);
+      return;
+    }
+
+    recorder.addEventListener('dataavailable', (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+
+    // Captured now: stopRecording() clears `recorder` synchronously, so the
+    // async 'stop' handler below cannot read anything off it.
+    const recordedMimeType = recorder.mimeType;
+
+    recorder.addEventListener('stop', async () => {
+      stopRecordingStream();
+      micBtn.classList.remove('recording');
+      const blob = new Blob(recordedChunks, { type: recordedMimeType });
+
+      if (!blob.size) {
+        setMicStatus('কোনো অডিও রেকর্ড হয়নি।', true);
+        return;
+      }
+
+      micBtn.disabled = true;
+      setMicStatus('কথা লেখায় রূপান্তর করা হচ্ছে…');
+      try {
+        const text = await transcribe(blob);
+        if (!text) {
+          setMicStatus('কিছু শোনা যায়নি, আবার চেষ্টা করুন।', true);
+          return;
+        }
+        // Put the transcript in the box rather than sending it blind, so a
+        // misheard word can be corrected before asking.
+        inputEl.value = text;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        inputEl.focus();
+        setMicStatus('');
+      } catch (err) {
+        setMicStatus('রূপান্তর ব্যর্থ হয়েছে, আবার চেষ্টা করুন।', true);
+      } finally {
+        micBtn.disabled = false;
+      }
+    });
+
+    recorder.start();
+    micBtn.classList.add('recording');
+    micBtn.setAttribute('aria-label', 'রেকর্ডিং বন্ধ করুন');
+    setMicStatus('শুনছি… বলা শেষ হলে আবার চাপুন।');
+  }
+
+  function stopRecording() {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    recorder = null;
+    micBtn.setAttribute('aria-label', 'ভয়েস ইনপুট');
+  }
+
+  micBtn.addEventListener('click', () => {
+    if (micBtn.classList.contains('recording')) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+
   resetBtn.addEventListener('click', async () => {
     if (sessionId) {
       try {
         await fetch(API_BASE + '/api/v1/reset', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
           body: JSON.stringify({ session_id: sessionId }),
         });
       } catch (e) {

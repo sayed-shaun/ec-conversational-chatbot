@@ -1,5 +1,11 @@
 :80 {
-	reverse_proxy ec-faq-chatbot:8000 {
-		flush_interval -1
+	handle /asr* {
+		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
+	}
+
+	handle {
+		reverse_proxy ec-faq-chatbot:8000 {
+			flush_interval -1
+		}
 	}
 }

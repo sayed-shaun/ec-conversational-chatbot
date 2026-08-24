@@ -55,6 +55,8 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: ec-faq-caddy
+    environment:
+      ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
