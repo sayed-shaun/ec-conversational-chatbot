@@ -1,11 +1,13 @@
 services:
 
   ec-faq-llama:
+    # Optional: only starts with `--profile local-llm`. Skip it and point
+    # LLAMA_BASE_URL at an existing llama-server instead of running a second
+    # one, which would load a duplicate model and fight for the same GPU.
+    profiles: ["local-llm"]
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: ec-faq-llama
     command: ${EXTRA_ARGS:-}
-    ports:
-      - "${PORT:-8080}:8080"
     environment:
       LLAMA_ARG_HF_REPO: ${HF_REPO}
       LLAMA_ARG_HF_FILE: ${HF_FILE}
@@ -50,8 +52,6 @@ services:
       MCP_HOST: 0.0.0.0
       MCP_PORT: 9000
       MCP_PATH: /mcp
-    ports:
-      - "9000:9000"
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-fsS", "-X", "POST", "http://localhost:9000/mcp", "-H", "Content-Type: application/json", "-H", "Accept: application/json, text/event-stream", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1\"}}}" ]
@@ -65,7 +65,10 @@ services:
       dockerfile: api.Dockerfile
     container_name: ec-faq-chatbot
     environment:
-      LLAMA_BASE_URL: http://ec-faq-llama:8080/v1
+      # Defaults to the bundled service; override to reuse an existing
+      # llama-server. For one published on the host, use
+      # http://host.docker.internal:8080/v1
+      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://ec-faq-llama:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
@@ -77,12 +80,19 @@ services:
       - ./static:/app/static:ro
       - chat-sessions:/data
     ports:
-      - "8000:8000"
+      # The only published port. llama and the MCP server stay on the
+      # internal network, reachable as ec-faq-llama:8080 and ec-faq-mcp:9000.
+      - "${PORT:-8000}:8000"
+    extra_hosts:
+      # Lets LLAMA_BASE_URL reach a llama-server published on the host.
+      - "host.docker.internal:host-gateway"
     depends_on:
-      ec-faq-llama:
-        condition: service_healthy
       ec-faq-mcp:
         condition: service_healthy
+      ec-faq-llama:
+        condition: service_healthy
+        # Not an error when the local-llm profile is off.
+        required: false
     restart: unless-stopped
 
 volumes:

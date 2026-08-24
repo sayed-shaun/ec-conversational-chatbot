@@ -264,23 +264,37 @@ model from Hugging Face before it reports healthy (`start_period: 1200s` in
 the healthcheck gives it up to 20 minutes). The chatbot won't start until
 both `ec-faq-llama` and `ec-faq-mcp` report healthy.
 
-Then open:
-- **Chat UI (test live)**: http://localhost:8000
-- **Chatbot health check**: http://localhost:8000/health
-- **llama.cpp server**: http://localhost:8080 (its own bundled web UI + `/v1/models`)
-- **MCP server**: http://localhost:9000/mcp (POST-only, a bare GET/browser hit will 4xx — that's normal for Streamable HTTP)
+Only the chat UI is published on the host. llama.cpp and the MCP server stay
+on the compose network, so nothing unauthenticated is exposed:
+
+- **Chat UI**: `http://localhost:${PORT}/static/index.html` (PORT default 8000)
+- **API docs**: `http://localhost:${PORT}/docs` (Swagger UI; `/redoc` and
+  `/openapi.json` are served too)
+- **Health check**: `http://localhost:${PORT}/health`
+- `http://localhost:${PORT}/` redirects to the chat UI
+- **llama.cpp** — internal only, as `ec-faq-llama:8080`
+- **MCP server** — internal only, as `ec-faq-mcp:9000/mcp`
+
+To inspect an internal service while debugging, go in through a container
+rather than publishing a port:
+
+```bash
+docker compose exec ec-faq-chatbot curl -s http://ec-faq-llama:8080/v1/models
+```
 
 ## Testing the MCP tool directly (without the chatbot or llama.cpp)
 
+The MCP server is not published on the host, so call it from inside the
+compose network:
+
 ```bash
 docker compose up -d ec-faq-mcp
-pip install fastmcp
-python3 - <<'PY'
+docker compose exec ec-faq-chatbot python - <<'PY'
 import asyncio, json
 from fastmcp import Client
 
 async def main():
-    async with Client("http://localhost:9000/mcp") as client:
+    async with Client("http://ec-faq-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
         result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))
