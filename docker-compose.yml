@@ -1,48 +1,5 @@
 services:
 
-  ec-faq-llama:
-    # Optional: only starts with `--profile local-llm`. Skip it and point
-    # LLAMA_BASE_URL at an existing llama-server instead of running a second
-    # one, which would load a duplicate model and fight for the same GPU.
-    profiles: ["local-llm"]
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    container_name: ec-faq-llama
-    command: ${EXTRA_ARGS:-}
-    environment:
-      LLAMA_ARG_HF_REPO: ${HF_REPO}
-      LLAMA_ARG_HF_FILE: ${HF_FILE}
-      HF_TOKEN: ${HF_TOKEN:-}
-      LLAMA_CACHE: /models
-      LLAMA_ARG_HOST: 0.0.0.0
-      LLAMA_ARG_PORT: 8080
-      LLAMA_ARG_N_PARALLEL: ${PARALLEL:-4}
-      LLAMA_ARG_CTX_SIZE: ${CTX_SIZE:-16384}
-      LLAMA_ARG_N_GPU_LAYERS: ${NGL:-99}
-      LLAMA_ARG_FLASH_ATTN: ${FLASH_ATTN:-on}
-    volumes:
-      - llama-models:/models
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "curl", "-fsS", "http://localhost:8080/health" ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      # On a cold start llama-server downloads the GGUF before it answers, and
-      # the chatbot is gated on this healthcheck. A grace window shorter than
-      # the download means the probes start failing, the service is marked
-      # unhealthy, and `docker compose up` aborts the chatbot with
-      # "dependency failed to start". An hour covers a slow link; it costs
-      # nothing once the model is cached in the llama-models volume, because
-      # the first successful probe ends the grace period immediately.
-      start_period: 3600s
-
   ec-faq-mcp:
     build:
       context: .
@@ -51,7 +8,6 @@ services:
     environment:
       TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
-
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -72,10 +28,7 @@ services:
       dockerfile: api.Dockerfile
     container_name: ec-faq-chatbot
     environment:
-      # Defaults to the bundled service; override to reuse an existing
-      # llama-server. For one published on the host, use
-      # http://host.docker.internal:8080/v1
-      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://ec-faq-llama:8080/v1}
+      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
@@ -87,21 +40,13 @@ services:
       - ./static:/app/static:ro
       - chat-sessions:/data
     ports:
-      # The only published port. llama and the MCP server stay on the
-      # internal network, reachable as ec-faq-llama:8080 and ec-faq-mcp:9000.
       - "${PORT:-8000}:8000"
     extra_hosts:
-      # Lets LLAMA_BASE_URL reach a llama-server published on the host.
       - "host.docker.internal:host-gateway"
     depends_on:
       ec-faq-mcp:
         condition: service_healthy
-      ec-faq-llama:
-        condition: service_healthy
-        # Not an error when the local-llm profile is off.
-        required: false
     restart: unless-stopped
 
 volumes:
-  llama-models:
   chat-sessions:

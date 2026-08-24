@@ -1,10 +1,12 @@
 # EC FAQ Chatbot (llama.cpp + FastMCP + FastAPI)
 
 A context-aware Bengali FAQ chatbot for Bangladesh Election Commission
-NID/voter services. Three containers, one `docker compose up`:
+NID/voter services. Two containers, one `docker compose up`, plus a
+llama-server you already have running:
 
-1. **`ec-faq-llama`** — the official `llama.cpp` CUDA server
-   image, auto-downloads and serves your GGUF model, OpenAI-compatible API.
+1. **your llama-server** — this repo does not run llama.cpp itself. Point
+   `LLAMA_BASE_URL` at any OpenAI-compatible llama-server you already have
+   running, on this host or elsewhere on the network.
 2. **`ec-faq-mcp`** — a real MCP server built with
    [FastMCP](https://gofastmcp.com), exposing one tool, `search_faq`, that
    bridges to your existing `top_similar` embedding-search API and resolves
@@ -20,26 +22,26 @@ NID/voter services. Three containers, one `docker compose up`:
                   │
                   │ OpenAI-compatible /v1/chat/completions
                   ▼
-             ec-faq-llama (:8080)
-             - runs your GGUF model on GPU
+             your llama-server (bring your own, e.g. :8080)
+             - runs your GGUF model
                   │
                   │ model requests the search_faq tool
                   ▼
-             ec-faq-mcp (FastMCP, Streamable HTTP, :9000/mcp)
+             ec-faq-mcp (FastMCP, Streamable HTTP, internal :9000/mcp)
              - search_faq tool
                   │
                   │ POST /ec_bot/top_similar/
                   ▼
              your existing top_similar API (:8002)
                   │
-             tag -> tag_answer.json (bundled in src/faq_mcp/)
+             tag -> tag_answer.json (bundled in src/mcp/)
 ```
 
 ## How it decides what to say
 
 1. User sends a message via the static chat UI (or any HTTP client) to the
    chatbot's `/api/v1/chat` endpoint.
-2. The chatbot calls `ec-faq-llama` with the full conversation
+2. The chatbot calls your llama-server with the full conversation
    history plus one tool definition: `search_faq`.
 3. **If the model thinks the question needs a lookup** (NID fees, voter
    registration, corrections, etc.), it calls `search_faq`. The MCP server:
@@ -60,14 +62,14 @@ NID/voter services. Three containers, one `docker compose up`:
 ```mermaid
 flowchart TD
     U([User types a message]) --> POST["POST /api/v1/chat<br/>{session_id, message}"]
-    POST --> HIST["get_history(session_id)<br/>system prompt + prior turns"]
-    HIST --> LLM["llama-server<br/>/v1/chat/completions<br/>+ search_faq tool schema"]
+    POST --> HIST["Chat.load(session_id)<br/>checkpointed history + system prompt"]
+    HIST --> LLM["your llama-server<br/>/v1/chat/completions<br/>+ search_faq tool schema"]
 
     LLM --> Q{"Model returned<br/>tool_calls?"}
 
     Q -->|"No — small talk<br/>(hi, thanks, bye)"| DIRECT["Use message content<br/>as the reply"]
 
-    Q -->|"Yes — factual question"| MCP["MCP client opens session<br/>to mcp-server :9000/mcp"]
+    Q -->|"Yes — factual question"| MCP["MCP client opens session<br/>to ec-faq-mcp:9000/mcp"]
     MCP --> TOOL["search_faq(question, top_k)"]
     TOOL --> SIM["POST top_similar API :8002<br/>returns top-k nearest questions"]
     SIM --> DEDUP["De-duplicate by tag<br/>keep highest-ranked per tag"]
@@ -83,9 +85,9 @@ flowchart TD
     HOPS -->|Yes| LLM
     HOPS -->|"No — safety cap hit"| FB["FALLBACK_REPLY<br/>'call 105'"]
 
-    DIRECT --> TRIM
-    FB --> TRIM["trim_history()<br/>keep system prompt + recent turns"]
-    TRIM --> RESP(["Reply returned to the UI<br/>{session_id, reply}"])
+    DIRECT --> SAVE
+    FB --> SAVE["Chat.save()<br/>trim + checkpoint to SQLite"]
+    SAVE --> RESP(["Reply returned to the UI<br/>{session_id, reply}"])
 ```
 
 ## Streaming
@@ -124,7 +126,7 @@ arrives.
 
 The parameter panel sends a `params` object with every request. `top_k` is
 forwarded to the `top_similar` API; the rest are implemented in
-`search_faq` (`src/faq_mcp/server.py`), since the upstream API accepts only
+`search_faq` (`src/mcp/server.py`), since the upstream API accepts only
 `question` and `top_k`:
 
 | param | effect |
@@ -168,8 +170,7 @@ ec-faq-chatbot/
     │   ├── client.py         # OpenAIClient (llama-server) + McpClient (search_faq)
     │   ├── prompt.py         # system prompt and canned replies (Bengali text)
     │   └── tools.py          # tool catalogue, dispatch, result summary
-    └── faq_mcp/              # MCP container (named to avoid clashing with
-        │                     # the installed `mcp` SDK package)
+    └── mcp/                  # MCP container
         ├── server.py         # FastMCP tool: search_faq (+ health)
         └── tag_answer.json   # local fallback (live copy pulled from GitHub)
 ```
@@ -194,13 +195,23 @@ setting — just edit `.env` or `docker-compose.yml`.
 
 ## Before you run this
 
-**1. ~~Verify the `top_similar` endpoint path.~~ Verified.**
+**1. Have a llama-server already running.**
+This repo does not run llama.cpp — it expects an OpenAI-compatible
+`llama-server` reachable at `LLAMA_BASE_URL`, on this host or elsewhere on
+the network. It must serve a tool-calling-capable model (Qwen2.5-Instruct,
+Llama-3.1/3.2-Instruct, Hermes-2-Pro, Gemma with `--jinja`, etc.) and must
+have been started **with `--jinja`** — without it `llama-server` never emits
+`tool_calls`, and the bot silently answers from the model instead of your
+FAQ data. `LLAMA_BASE_URL` defaults to `http://host.docker.internal:8080/v1`,
+i.e. one published on this host; override it for a llama-server elsewhere.
+
+**2. ~~Verify the `top_similar` endpoint path.~~ Verified.**
 `TOP_SIMILAR_API_URL=http://172.31.60.228:8002/ec_bot/top_similar/` is
 correct. A POST there returns `200` with exactly the shape `search_faq`
 expects (`input_question`, `top_similar[].tag`, `.cosine_similarity`).
 No action needed.
 
-**2. `GITHUB_TOKEN` is required.**
+**3. `GITHUB_TOKEN` is required.**
 The MCP server fetches `tag_answer.json` **live from GitHub at startup**
 (`TAG_ANSWER_URL`, default: the `development` branch of
 `Synesis-IT-PLC/ec-faq-bot`). That repo is **private** — verified: the raw URL
@@ -208,45 +219,29 @@ returns `404` with no token and `200` with one. Set `GITHUB_TOKEN` to a PAT
 with read access, or the fetch fails and the server silently falls back to the
 bundled copy. With a valid token the server logs `fetched 1374 tags` on boot.
 
-`src/faq_mcp/tag_answer.json` is a snapshot of that dataset, used only when the
+`src/mcp/tag_answer.json` is a snapshot of that dataset, used only when the
 live fetch fails. Set `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup
 loudly instead of serving a possibly stale snapshot. The knowledge base is read
 once at start, so a dataset change needs a
 `docker compose restart ec-faq-mcp`.
-
-**3. Pick a tool-calling-capable model for `HF_REPO` / `HF_FILE`.**
-This whole flow depends on `llama-server` correctly returning `tool_calls`
-in its OpenAI-compatible response. That requires a model trained for tool
-use — e.g. Qwen2.5-Instruct, Llama-3.1/3.2-Instruct, Mistral-Instruct-v0.3+,
-Hermes-2-Pro. Not every GGUF model supports this. If your model needs the
-Jinja chat template explicitly enabled, add `--jinja` to `EXTRA_ARGS` in
-`.env`.
-
-**4. GPU + Docker.**
-`ec-faq-llama` requests an NVIDIA GPU (`deploy.resources.
-reservations.devices`). You need the NVIDIA Container Toolkit installed on
-the Docker host. If you're CPU-only, swap the image for
-`ghcr.io/ggml-org/llama.cpp:server` and drop the `deploy:` block.
 
 ### Gotchas found while bringing this up
 
 - **The MCP healthcheck must use `initialize`, not `ping`.** MCP Streamable
   HTTP requires the `initialize` handshake before any other method, so a
   bare `ping` returns `400` forever and the container never goes healthy —
-  which blocks `chatbot` via `depends_on`. Fixed in `docker-compose.yml`.
-- **Multimodal GGUFs need `--no-mmproj` on a small GPU.** Gemma 3n/4 GGUFs
-  ship a ~1 GB vision projector that `llama-server` loads by default. On a
-  4 GB card that CUDA-OOMs in a restart loop (15 restarts before it limped
-  up). Adding `--no-mmproj` to `EXTRA_ARGS` loads cleanly in ~20s with zero
-  restarts. This bot is text-only, so the projector is pure waste.
-- **Only one llama-server can hold the GPU.** If another project already
-  runs one, stop it first — both the `8080` port and the VRAM collide.
+  which blocks `ec-faq-chatbot` via `depends_on`. Fixed in `docker-compose.yml`.
+- **A second llama.cpp on the same GPU competes with the first.** If you
+  are tempted to run your own here as well as the one already on the host,
+  don't — two models load into the same VRAM and one, or both, will OOM.
+  Point `LLAMA_BASE_URL` at the existing one instead.
 
 ## Running it
 
 ```bash
 cp .env.example .env
-# edit .env: set HF_REPO/HF_FILE to your model, fix TOP_SIMILAR_API_URL if needed
+# edit .env: set LLAMA_BASE_URL to your llama-server, fix TOP_SIMILAR_API_URL
+# if needed, and GITHUB_TOKEN for the private knowledge-base repo
 
 docker compose up --build
 ```
@@ -258,32 +253,27 @@ Dependencies run one way: `api -> chatbot -> core`. FastAPI is imported only
 under `src/api/`, so the chat engine and clients in `src/chatbot/` can be
 used, or tested, without a web server involved.
 
+The chatbot won't accept traffic until `ec-faq-mcp` reports healthy
+(`depends_on: service_healthy`); llama-server readiness is not gated by
+compose, since it is not a container this repo manages. If it isn't
+reachable yet, chat requests fail over to the "call 105" fallback reply
+until it is.
 
-First start will take a while — the llama.cpp container downloads the GGUF
-model from Hugging Face before it reports healthy, and the chatbot is gated on
-that via `depends_on: service_healthy`. The healthcheck allows a one-hour
-grace window (`start_period: 3600s`) so a slow download cannot be mistaken for
-a broken service; if the grace window expires first, llama is marked unhealthy
-and `docker compose up` aborts the chatbot with "dependency failed to start".
-The window costs nothing on later starts, since the model is cached in the
-`llama-models` volume and the first successful probe ends the grace period.
-
-Only the chat UI is published on the host. llama.cpp and the MCP server stay
-on the compose network, so nothing unauthenticated is exposed:
+Only the chat UI is published on the host. The MCP server stays on the
+compose network, so nothing unauthenticated is exposed there:
 
 - **Chat UI**: `http://localhost:${PORT}/static/index.html` (PORT default 8000)
 - **API docs**: `http://localhost:${PORT}/docs` (Swagger UI; `/redoc` and
   `/openapi.json` are served too)
 - **Health check**: `http://localhost:${PORT}/health`
 - `http://localhost:${PORT}/` redirects to the chat UI
-- **llama.cpp** — internal only, as `ec-faq-llama:8080`
 - **MCP server** — internal only, as `ec-faq-mcp:9000/mcp`
 
-To inspect an internal service while debugging, go in through a container
-rather than publishing a port:
+To inspect the MCP server while debugging, go in through a container rather
+than publishing a port:
 
 ```bash
-docker compose exec ec-faq-chatbot curl -s http://ec-faq-llama:8080/v1/models
+docker compose exec ec-faq-chatbot curl -s http://ec-faq-mcp:9000/mcp
 ```
 
 ## Testing the MCP tool directly (without the chatbot or llama.cpp)
@@ -309,7 +299,7 @@ PY
 
 ## Using the MCP server from Claude Desktop / Claude Code instead
 
-`src/faq_mcp/server.py` also supports stdio transport, so you can run it
+`src/mcp/server.py` also supports stdio transport, so you can run it
 directly as a local MCP server (outside Docker) for other MCP clients:
 
 ```bash
