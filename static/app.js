@@ -4,14 +4,6 @@ const inputEl = document.getElementById('question-input');
 const sendBtn = document.getElementById('send-btn');
 const resetBtn = document.getElementById('reset-btn');
 
-const paramEls = {
-  top_k: document.getElementById('param-top-k'),
-  min_score: document.getElementById('param-min-score'),
-  min_score_ratio: document.getElementById('param-min-score-ratio'),
-  handle_unknown: document.getElementById('param-handle-unknown'),
-  show_candidates: document.getElementById('param-show-candidates'),
-};
-
 let sessionId = localStorage.getItem('ec_faq_session_id') || null;
 let busy = false;
 
@@ -27,20 +19,6 @@ const nearBottom = () =>
 
 function stickToBottom(wasNear) {
   if (wasNear) messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-function readParams() {
-  const num = (input, fallback) => {
-    const v = parseFloat(input.value);
-    return Number.isFinite(v) ? v : fallback;
-  };
-  return {
-    top_k: Math.max(1, Math.round(num(paramEls.top_k, 10))),
-    min_score: num(paramEls.min_score, null),
-    min_score_ratio: num(paramEls.min_score_ratio, 1),
-    handle_unknown: paramEls.handle_unknown.checked,
-    show_candidates: paramEls.show_candidates.checked,
-  };
 }
 
 function addRow(who) {
@@ -189,7 +167,6 @@ async function ask(text) {
       body: JSON.stringify({
         session_id: sessionId,
         message: text,
-        params: readParams(),
       }),
     });
     if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);

@@ -27,34 +27,6 @@
       </div>
     </header>
 
-    <div class="settings-panel">
-      <details class="params-details">
-        <summary>প্যারামিটার</summary>
-        <div class="params-grid">
-          <label class="param">
-            <span>top_k</span>
-            <input id="param-top-k" type="number" min="1" max="50" step="1" value="10" />
-          </label>
-          <label class="param">
-            <span>min_score</span>
-            <input id="param-min-score" type="number" min="0" max="1" step="0.01" value="0.9" />
-          </label>
-          <label class="param">
-            <span>min_score_ratio</span>
-            <input id="param-min-score-ratio" type="number" min="0" step="0.1" value="1" />
-          </label>
-          <label class="param param-check">
-            <input id="param-handle-unknown" type="checkbox" checked />
-            <span>handle_unknown</span>
-          </label>
-          <label class="param param-check">
-            <input id="param-show-candidates" type="checkbox" checked />
-            <span>show_candidates</span>
-          </label>
-        </div>
-      </details>
-    </div>
-
     <main id="messages" class="messages" aria-live="polite"></main>
 
     <form id="chat-form" class="composer">

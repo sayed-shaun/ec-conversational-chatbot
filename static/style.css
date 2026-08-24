@@ -74,42 +74,6 @@ body {
 .icon-btn:hover { background: rgba(255,255,255,0.28); }
 .icon-btn svg { width: 17px; height: 17px; }
 
-.settings-panel {
-  border-bottom: 1px solid var(--line);
-  background: #fafbfa;
-  flex: none;
-}
-.params-details > summary {
-  cursor: pointer;
-  padding: 8px 16px;
-  font-size: 0.8rem;
-  color: var(--muted);
-  user-select: none;
-  list-style: none;
-  display: flex; align-items: center; gap: 6px;
-}
-.params-details > summary::-webkit-details-marker { display: none; }
-.params-details > summary::before { content: "\25B8"; font-size: 0.7rem; }
-.params-details[open] > summary::before { content: "\25BE"; }
-.params-grid {
-  padding: 4px 16px 14px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px 14px;
-}
-.param { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; }
-.param > span { color: var(--muted); font-family: var(--mono); }
-.param input[type="number"] {
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 0.82rem;
-  font-family: var(--mono);
-  width: 100%;
-}
-.param-check { flex-direction: row; align-items: center; gap: 7px; }
-.param-check input { width: 15px; height: 15px; accent-color: var(--green); }
-
 .messages {
   flex: 1;
   overflow-y: auto;
