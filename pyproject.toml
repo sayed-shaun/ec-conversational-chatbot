@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ec-faq-chatbot"
+version = "1.0.0"
+description = "Context-aware Bengali FAQ chatbot for the Bangladesh Election Commission (llama.cpp + MCP)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.5.0",
+    "fastmcp==3.4.7",
+]
+
+[project.optional-dependencies]
+# Chatbot backend: FastAPI app + OpenAI SDK client for llama-server.
+chatbot = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "openai>=1.35.0",
+]
+# MCP server: FastMCP tool over the top_similar embedding API.
+mcp = [
+    "requests>=2.31.0",
+]
+dev = [
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+ec-faq-mcp = "src.faq_mcp.server:main"
+
+[tool.setuptools]
+packages = ["src", "src.core", "src.api", "src.api.v1", "src.chatbot", "src.faq_mcp"]
+
+[tool.setuptools.package-data]
+"src.faq_mcp" = ["tag_answer.json"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/F are the defaults; I adds import sorting so ordering stays consistent.
+select = ["E", "F", "I"]

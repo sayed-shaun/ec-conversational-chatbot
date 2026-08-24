@@ -1,0 +1,95 @@
+services:
+
+  llamacpp-inference-service:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-server
+    command: ${EXTRA_ARGS:-}
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      LLAMA_ARG_HF_REPO: ${HF_REPO}
+      LLAMA_ARG_HF_FILE: ${HF_FILE}
+      HF_TOKEN: ${HF_TOKEN:-}
+      LLAMA_CACHE: /models
+      LLAMA_ARG_HOST: 0.0.0.0
+      LLAMA_ARG_PORT: 8080
+      LLAMA_ARG_N_PARALLEL: ${PARALLEL:-4}
+      LLAMA_ARG_CTX_SIZE: ${CTX_SIZE:-16384}
+      LLAMA_ARG_N_GPU_LAYERS: ${NGL:-99}
+      LLAMA_ARG_FLASH_ATTN: ${FLASH_ATTN:-on}
+    volumes:
+      - llama-models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 1200s
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp.Dockerfile
+    container_name: ec-faq-mcp
+    environment:
+      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
+
+      TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 9000
+      MCP_PATH: /mcp
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "-X", "POST", "http://localhost:9000/mcp", "-H", "Content-Type: application/json", "-H", "Accept: application/json, text/event-stream", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1\"}}}" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  chatbot:
+    build:
+      context: .
+      dockerfile: api.Dockerfile
+    container_name: ec-faq-chatbot
+    environment:
+      LLAMA_BASE_URL: http://llamacpp-inference-service:8080/v1
+      LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
+      MCP_SERVER_URL: http://mcp-server:9000/mcp
+      MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
+      SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
+      SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
+      SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # The image bakes in a copy of static/, which means every CSS/JS tweak
+      # would otherwise need a rebuild. Mounting it read-only makes UI edits
+      # visible on a plain browser refresh.
+      - ./static:/app/static:ro
+      # Conversation checkpoints. Without this the SQLite file lives in the
+      # container layer and dies with it, defeating the point.
+      - chat-sessions:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      llamacpp-inference-service:
+        condition: service_healthy
+      mcp-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  llama-models:
+  chat-sessions:
