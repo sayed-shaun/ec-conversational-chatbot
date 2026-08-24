@@ -29,13 +29,13 @@ dev = [
 ]
 
 [project.scripts]
-ec-faq-mcp = "src.faq_mcp.server:main"
+ec-faq-mcp = "src.mcp.server:main"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.api", "src.api.v1", "src.chatbot", "src.faq_mcp"]
+packages = ["src", "src.core", "src.api", "src.api.v1", "src.chatbot", "src.mcp"]
 
 [tool.setuptools.package-data]
-"src.faq_mcp" = ["tag_answer.json"]
+"src.mcp" = ["tag_answer.json"]
 
 [tool.ruff]
 line-length = 88

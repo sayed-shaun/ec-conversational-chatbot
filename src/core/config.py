@@ -25,10 +25,10 @@ def _default_tag_answer_path() -> str:
     """Locate tag_answer.json in a source checkout or inside the image.
 
     In the container the MCP service's files are copied to the WORKDIR, so the
-    file sits beside the process; from a checkout it lives in src/faq_mcp/.
+    file sits beside the process; from a checkout it lives in src/mcp/.
     """
     candidates = [
-        os.path.join(_SRC_DIR, "faq_mcp", "tag_answer.json"),
+        os.path.join(_SRC_DIR, "mcp", "tag_answer.json"),
         os.path.join(os.getcwd(), "tag_answer.json"),
     ]
     for path in candidates:
@@ -109,7 +109,7 @@ class ChatbotSettings(BaseSettings):
 
 
 class McpSettings(BaseSettings):
-    """Settings for the FastMCP server (src/faq_mcp)."""
+    """Settings for the FastMCP server (src/mcp)."""
 
     model_config = _BASE_CONFIG
 

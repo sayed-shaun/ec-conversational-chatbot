@@ -38,7 +38,7 @@ def run_api() -> None:
 
 def run_mcp() -> None:
     """Serve the MCP search_faq server."""
-    from src.faq_mcp.server import main as mcp_main
+    from src.mcp.server import main as mcp_main
 
     mcp_main()
 
