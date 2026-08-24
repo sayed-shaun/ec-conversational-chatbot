@@ -55,14 +55,16 @@ class ChatbotSettings(BaseSettings):
     )
 
     mcp_server_url: str = Field(
-        default="http://mcp-server:9000/mcp",
+        default="http://ec-faq-mcp:9000/mcp",
         description="Streamable HTTP endpoint of the EC FAQ MCP server.",
     )
 
     max_history_turns: int = Field(
         default=12,
         ge=1,
-        description="How many past user+assistant turns to keep per session before trimming.",
+        description=(
+            "How many past user+assistant turns to keep per session " "before trimming."
+        ),
     )
     max_tool_hops: int = Field(
         default=3,
@@ -136,7 +138,9 @@ class McpSettings(BaseSettings):
     )
     github_token: str = Field(
         default="",
-        description="GitHub token for tag_answer_url; required while the repo is private.",
+        description=(
+            "GitHub token for tag_answer_url; required while the repo is private."
+        ),
     )
     tag_answer_path: str = Field(
         default_factory=_default_tag_answer_path,
@@ -144,7 +148,10 @@ class McpSettings(BaseSettings):
     )
     tag_answer_allow_local_fallback: bool = Field(
         default=True,
-        description="If the live fetch fails, load tag_answer_path instead of failing startup.",
+        description=(
+            "If the live fetch fails, load tag_answer_path "
+            "instead of failing startup."
+        ),
     )
     confidence_threshold: float = Field(
         default=0.55,

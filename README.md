@@ -3,9 +3,9 @@
 A context-aware Bengali FAQ chatbot for Bangladesh Election Commission
 NID/voter services. Three containers, one `docker compose up`:
 
-1. **`llamacpp-inference-service`** — the official `llama.cpp` CUDA server
+1. **`ec-faq-llama`** — the official `llama.cpp` CUDA server
    image, auto-downloads and serves your GGUF model, OpenAI-compatible API.
-2. **`mcp-server`** — a real MCP server built with
+2. **`ec-faq-mcp`** — a real MCP server built with
    [FastMCP](https://gofastmcp.com), exposing one tool, `search_faq`, that
    bridges to your existing `top_similar` embedding-search API and resolves
    results to answers via `tag_answer.json`.
@@ -14,18 +14,18 @@ NID/voter services. Three containers, one `docker compose up`:
    the bot live in your browser.
 
 ```
- Browser ──▶ chatbot (FastAPI, :8000)
+ Browser ──▶ ec-faq-chatbot (FastAPI, :8000)
              - session memory (per session_id)
              - tool-calling loop
                   │
                   │ OpenAI-compatible /v1/chat/completions
                   ▼
-             llamacpp-inference-service (:8080)
+             ec-faq-llama (:8080)
              - runs your GGUF model on GPU
                   │
                   │ model requests the search_faq tool
                   ▼
-             mcp-server (FastMCP, Streamable HTTP, :9000/mcp)
+             ec-faq-mcp (FastMCP, Streamable HTTP, :9000/mcp)
              - search_faq tool
                   │
                   │ POST /ec_bot/top_similar/
@@ -39,7 +39,7 @@ NID/voter services. Three containers, one `docker compose up`:
 
 1. User sends a message via the static chat UI (or any HTTP client) to the
    chatbot's `/api/v1/chat` endpoint.
-2. The chatbot calls `llamacpp-inference-service` with the full conversation
+2. The chatbot calls `ec-faq-llama` with the full conversation
    history plus one tool definition: `search_faq`.
 3. **If the model thinks the question needs a lookup** (NID fees, voter
    registration, corrections, etc.), it calls `search_faq`. The MCP server:
@@ -212,7 +212,7 @@ bundled copy. With a valid token the server logs `fetched 1374 tags` on boot.
 live fetch fails. Set `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup
 loudly instead of serving a possibly stale snapshot. The knowledge base is read
 once at start, so a dataset change needs a
-`docker compose restart mcp-server`.
+`docker compose restart ec-faq-mcp`.
 
 **3. Pick a tool-calling-capable model for `HF_REPO` / `HF_FILE`.**
 This whole flow depends on `llama-server` correctly returning `tool_calls`
@@ -223,7 +223,7 @@ Jinja chat template explicitly enabled, add `--jinja` to `EXTRA_ARGS` in
 `.env`.
 
 **4. GPU + Docker.**
-`llamacpp-inference-service` requests an NVIDIA GPU (`deploy.resources.
+`ec-faq-llama` requests an NVIDIA GPU (`deploy.resources.
 reservations.devices`). You need the NVIDIA Container Toolkit installed on
 the Docker host. If you're CPU-only, swap the image for
 `ghcr.io/ggml-org/llama.cpp:server` and drop the `deploy:` block.
@@ -262,7 +262,7 @@ used, or tested, without a web server involved.
 First start will take a while — the llama.cpp container downloads the GGUF
 model from Hugging Face before it reports healthy (`start_period: 1200s` in
 the healthcheck gives it up to 20 minutes). The chatbot won't start until
-both `llamacpp-inference-service` and `mcp-server` report healthy.
+both `ec-faq-llama` and `ec-faq-mcp` report healthy.
 
 Then open:
 - **Chat UI (test live)**: http://localhost:8000
@@ -273,7 +273,7 @@ Then open:
 ## Testing the MCP tool directly (without the chatbot or llama.cpp)
 
 ```bash
-docker compose up -d mcp-server
+docker compose up -d ec-faq-mcp
 pip install fastmcp
 python3 - <<'PY'
 import asyncio, json

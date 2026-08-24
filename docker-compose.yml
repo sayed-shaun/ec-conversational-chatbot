@@ -1,8 +1,8 @@
 services:
 
-  llamacpp-inference-service:
+  ec-faq-llama:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    container_name: llama-server
+    container_name: ec-faq-llama
     command: ${EXTRA_ARGS:-}
     ports:
       - "${PORT:-8080}:8080"
@@ -34,7 +34,7 @@ services:
       retries: 5
       start_period: 1200s
 
-  mcp-server:
+  ec-faq-mcp:
     build:
       context: .
       dockerfile: mcp.Dockerfile
@@ -59,34 +59,29 @@ services:
       timeout: 5s
       retries: 5
 
-  chatbot:
+  ec-faq-chatbot:
     build:
       context: .
       dockerfile: api.Dockerfile
     container_name: ec-faq-chatbot
     environment:
-      LLAMA_BASE_URL: http://llamacpp-inference-service:8080/v1
+      LLAMA_BASE_URL: http://ec-faq-llama:8080/v1
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
-      MCP_SERVER_URL: http://mcp-server:9000/mcp
+      MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      # The image bakes in a copy of static/, which means every CSS/JS tweak
-      # would otherwise need a rebuild. Mounting it read-only makes UI edits
-      # visible on a plain browser refresh.
       - ./static:/app/static:ro
-      # Conversation checkpoints. Without this the SQLite file lives in the
-      # container layer and dies with it, defeating the point.
       - chat-sessions:/data
     ports:
       - "8000:8000"
     depends_on:
-      llamacpp-inference-service:
+      ec-faq-llama:
         condition: service_healthy
-      mcp-server:
+      ec-faq-mcp:
         condition: service_healthy
     restart: unless-stopped
 

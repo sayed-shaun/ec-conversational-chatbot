@@ -29,11 +29,15 @@ TOOLS = [
                 "properties": {
                     "question": {
                         "type": "string",
-                        "description": "The user's question, verbatim or lightly cleaned up.",
+                        "description": (
+                            "The user's question, verbatim or lightly cleaned up."
+                        ),
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "How many nearest-neighbour candidates to fetch.",
+                        "description": (
+                            "How many nearest-neighbour candidates to fetch."
+                        ),
                         "default": 10,
                     },
                 },
