@@ -385,6 +385,58 @@ Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
+## Latency: the pause before an answer starts
+
+The tool call and its result come back quickly, then nothing appears for
+several seconds, then the answer streams fast. Measured breakdown of one
+turn:
+
+| stage | time |
+|---|---|
+| first reasoning token | 0.33s |
+| `tool_call` emitted | 8.12s |
+| MCP round trip | 1.06s |
+| prefill after the tool result | **0.11s** |
+| second reasoning pass | **9.07s** |
+| reasoning to first answer token | 0.11s |
+| answer generation | 7.16s |
+
+The pause is neither prefill nor the MCP call. It is the model running a
+second thinking pass, re-narrating the tool result to itself before writing
+anything -- 258 reasoning chunks in that sample. Reasoning models
+(Gemma 3n/4, Qwen3, ...) do this on every hop, so a tool-backed turn pays
+for it twice.
+
+**Fix: start llama-server with `--reasoning off`** (or
+`--reasoning-budget 0`). Measured over the same four questions, same
+build, same machine:
+
+| | tool called | replied in Bengali | avg turn |
+|---|---|---|---|
+| reasoning on (default) | 4/4 | 4/4 | 30.9s |
+| `--reasoning off` | 4/4 | 4/4 | **13.3s** |
+
+No quality loss showed up. On the hardest case in the set -- a compound
+question spanning two facts (a country and an age) -- reasoning off was
+both 4.5x faster (8.0s vs 36.3s) and *better*: it named the user's country
+explicitly, which the reasoning run failed to do.
+
+Two honest caveats. The sample is four questions, not a benchmark. And in
+an earlier ad-hoc run with reasoning off, one request skipped the tool call
+and one answered in English; neither reproduced in the structured runs, so
+they look like ordinary nondeterminism rather than a consequence of the
+flag -- but worth watching for.
+
+`LLAMA_REASONING_EFFORT` in this repo forwards `reasoning_effort` per
+request as a softer alternative. It is off by default because it proved
+unreliable through the streaming path: three runs of the same question
+produced 247, 101 and 0 reasoning chunks. The server flag is the dependable
+lever.
+
+The UI shows the total turn time under each answer, with the split (time to
+the tool result, time to the first answer token, time writing) on hover, so
+this is measurable from the browser without instrumenting anything.
+
 ## Notable design choices / limitations
 
 - **Transcripts are checkpointed to SQLite** (`src/chatbot/checkpointer.py`)
