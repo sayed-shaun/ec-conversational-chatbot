@@ -57,6 +57,20 @@ function addUserMessage(text) {
   addRow('user').textContent = text;
 }
 
+function renderAnswer(answerEl, raw) {
+  answerEl.innerHTML = renderMarkdown(raw);
+}
+
+function addRetryButton(bubble, text) {
+  const btn = el('button', 'retry-btn', bubble);
+  btn.type = 'button';
+  btn.textContent = '↻ আবার চেষ্টা করুন';
+  btn.addEventListener('click', () => {
+    bubble.remove();
+    ask(text);
+  });
+}
+
 async function ask(text) {
   const bubble = addRow('bot');
 
@@ -65,13 +79,15 @@ async function ask(text) {
   thinkSummary.textContent = 'চিন্তা করছে…';
   const thinkBody = el('div', 'think-body', think);
   const toolsEl = el('div', 'tools', bubble);
-  const answerEl = el('span', 'answer cursor', bubble);
+  const answerEl = el('div', 'answer cursor', bubble);
 
   think.style.display = 'none';
   think.open = true;
 
   let chip = null;
   let answerStarted = false;
+  let answerRaw = '';
+  let failed = false;
 
   const handle = (ev) => {
     const wasNear = nearBottom();
@@ -139,17 +155,20 @@ async function ask(text) {
           answerStarted = true;
           collapseThinking();
         }
-        answerEl.textContent += ev.text;
+        answerRaw += ev.text;
+        renderAnswer(answerEl, answerRaw);
         break;
 
       case 'error':
+        failed = true;
         el('span', 'stream-err', bubble).textContent =
           '⚠ ' + (ev.message || 'stream error');
         break;
 
       case 'done':
-        if (!answerEl.textContent.trim()) {
-          answerEl.textContent = ev.reply || '(কোনো উত্তর পাওয়া যায়নি)';
+        if (!answerRaw.trim()) {
+          answerRaw = ev.reply || '(কোনো উত্তর পাওয়া যায়নি)';
+          renderAnswer(answerEl, answerRaw);
         }
         break;
     }
@@ -201,11 +220,13 @@ async function ask(text) {
       }
     }
   } catch (err) {
+    failed = true;
     el('span', 'stream-err', bubble).textContent =
       'দুঃখিত, সার্ভারের সাথে সংযোগ করা যায়নি।';
   } finally {
     answerEl.classList.remove('cursor');
     if (!thinkBody.textContent.trim()) think.style.display = 'none';
+    if (failed) addRetryButton(bubble, text);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 }
