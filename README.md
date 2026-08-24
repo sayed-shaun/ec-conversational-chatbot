@@ -152,9 +152,8 @@ ec-faq-chatbot/
 ├── api.Dockerfile            # chatbot image: FastAPI + OpenAI SDK
 ├── mcp.Dockerfile            # MCP server image
 ├── static/
-│   ├── index.html            # chat UI shell
-│   ├── style.css             # UI styles
-│   └── app.js                # SSE streaming client, live tool-call view
+│   └── index.html            # chat UI: markup, styles, and the SSE
+│                              # streaming client, all in one file
 └── src/
     ├── core/                 # shared by every service
     │   ├── config.py         # typed Settings: chatbot_settings, mcp_settings
