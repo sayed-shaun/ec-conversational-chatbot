@@ -54,6 +54,16 @@ class ChatbotSettings(BaseSettings):
         ),
     )
 
+    llama_reasoning_effort: str = Field(
+        default="",
+        description=(
+            "Passed through as reasoning_effort on chat-completion requests. "
+            "Empty leaves the model's default. 'none' suppresses most of the "
+            "thinking pass, which on a reasoning model is the bulk of the "
+            "delay between a tool result and the first answer token."
+        ),
+    )
+
     mcp_server_url: str = Field(
         default="http://ec-faq-mcp:9000/mcp",
         description="Streamable HTTP endpoint of the EC FAQ MCP server.",

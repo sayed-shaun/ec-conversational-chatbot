@@ -51,6 +51,8 @@ class OpenAIClient:
         }
         if stream:
             kwargs["stream"] = True
+        if settings.llama_reasoning_effort:
+            kwargs["reasoning_effort"] = settings.llama_reasoning_effort
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice

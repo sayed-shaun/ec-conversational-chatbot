@@ -590,6 +590,7 @@
 
     let chip = null;
     let answerStarted = false;
+    let toolRan = false;
     let answerRaw = '';
     let failed = false;
 
@@ -606,9 +607,21 @@
           think.style.display = '';
           thinkBody.textContent += ev.text;
           thinkBody.scrollTop = thinkBody.scrollHeight;
+          /*
+           * After a tool result the model runs a second thinking pass before
+           * the first answer token, which is the bulk of the wait on a
+           * reasoning model. Without this the block stayed collapsed under a
+           * static label and the UI looked frozen for that whole stretch.
+           */
+          if (!answerStarted) {
+            thinkSummary.textContent = toolRan
+              ? 'উত্তর তৈরি করছে…'
+              : 'চিন্তা করছে…';
+          }
           break;
 
         case 'tool_call': {
+          toolRan = true;
           collapseThinking();
           chip = el('div', 'tool running', toolsEl);
           el('span', 'tool-name', chip).textContent = '\u{1F527} ' + ev.name;
