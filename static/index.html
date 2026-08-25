@@ -160,10 +160,27 @@
     border-left: 3px solid var(--green);
     background: var(--green-soft);
     border-radius: 7px;
-    padding: 7px 10px;
     margin-bottom: 8px;
     font-size: 0.78rem;
   }
+  .tool.running {
+    animation: tool-glow 1.2s ease-in-out infinite;
+  }
+  @keyframes tool-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(15, 107, 69, 0.35); }
+    50%      { box-shadow: 0 0 0 5px rgba(15, 107, 69, 0); }
+  }
+  .tool > summary {
+    cursor: pointer;
+    padding: 7px 10px;
+    list-style: none;
+    user-select: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tool > summary::-webkit-details-marker { display: none; }
+  .tool > summary::before { content: "\25B8"; font-size: 0.65rem; color: var(--green-dark); }
+  .tool[open] > summary::before { content: "\25BE"; }
+  .tool-body { padding: 0 10px 8px; }
   .tool-name {
     font-family: var(--mono);
     font-weight: 600;
@@ -645,15 +662,17 @@
         case 'tool_call': {
           toolRan = true;
           collapseThinking();
-          chip = el('div', 'tool running', toolsEl);
-          el('span', 'tool-name', chip).textContent = '\u{1F527} ' + ev.name;
+          chip = el('details', 'tool running', toolsEl);
+          const summary = el('summary', null, chip);
+          el('span', 'tool-name', summary).textContent = '\u{1F527} ' + ev.name;
+          const body = el('div', 'tool-body', chip);
           let args = ev.arguments || '';
           try {
             args = JSON.stringify(JSON.parse(args));
           } catch (e) {
 
           }
-          el('code', 'tool-args', chip).textContent = args;
+          el('code', 'tool-args', body).textContent = args;
           break;
         }
 
@@ -661,7 +680,8 @@
           toolResultAt = performance.now();
           if (!chip) break;
           chip.classList.remove('running');
-          const res = el('span', 'tool-res', chip);
+          const body = chip.querySelector('.tool-body');
+          const res = el('span', 'tool-res', body);
 
           if (ev.error) {
             const bad = el('span', 'bad', res);
