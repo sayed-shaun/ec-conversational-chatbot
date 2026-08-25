@@ -12,13 +12,14 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       TAG_ANSWER_ALLOW_LOCAL_FALLBACK: ${TAG_ANSWER_ALLOW_LOCAL_FALLBACK:-true}
       TAG_ANSWER_REFRESH_SECONDS: ${TAG_ANSWER_REFRESH_SECONDS:-0}
+      TAG_ANSWER_PATH: /data/tag_answer.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
       MCP_PORT: 9000
       MCP_PATH: /mcp
     volumes:
-      - ./src/mcp/tag_answer.json:/app/src/mcp/tag_answer.json
+      - tag-answer-data:/data
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-fsS", "-X", "POST", "http://localhost:9000/mcp", "-H", "Content-Type: application/json", "-H", "Accept: application/json, text/event-stream", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1\"}}}" ]
@@ -86,3 +87,4 @@ services:
 
 volumes:
   chat-sessions:
+  tag-answer-data:
