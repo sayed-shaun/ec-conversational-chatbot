@@ -173,6 +173,14 @@ class McpSettings(BaseSettings):
             "instead of failing startup."
         ),
     )
+    tag_answer_refresh_seconds: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Re-fetch tag_answer_url on this interval so GitHub-side edits "
+            "reach a running server without a restart. 0 disables polling."
+        ),
+    )
     confidence_threshold: float = Field(
         default=0.55,
         ge=0.0,

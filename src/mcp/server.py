@@ -17,82 +17,27 @@ containers (e.g. the chatbot service) as well as from any MCP client
 (Claude Desktop, Claude Code, Cursor, etc.) that supports HTTP transport.
 For local stdio use instead, set MCP_TRANSPORT=stdio.
 
-The knowledge base is fetched live from GitHub at startup (see
-TAG_ANSWER_URL / GITHUB_TOKEN), falling back to the bundled
-tag_answer.json if that fetch fails.
+The knowledge base is fetched live from GitHub at startup and optionally
+kept fresh on an interval (see data_fetch.py: TAG_ANSWER_URL, GITHUB_TOKEN,
+TAG_ANSWER_REFRESH_SECONDS), falling back to the bundled tag_answer.json
+if the live fetch fails.
 
 All configuration lives in src/core/config.py (Settings, pydantic-settings) —
 see that file for every available environment variable.
 """
-
-import json
 
 import requests
 from fastmcp import FastMCP
 
 from src.core.config import mcp_settings as settings
 from src.core.logger import get_logger
+from src.mcp.data_fetch import TAG_ANSWERS, start_refresh_thread
 
 logger = get_logger(__name__)
 
 NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
-
-
-def _fetch_tag_answers() -> dict:
-    """Fetch the tag -> answer knowledge base from settings.tag_answer_url.
-
-    Raw GitHub URLs for a private repo need a token; pass one via
-    GITHUB_TOKEN. Raises on any transport, auth, or JSON error.
-    """
-    headers = {"Accept": "application/vnd.github.raw, application/json"}
-    if settings.github_token:
-        headers["Authorization"] = f"Bearer {settings.github_token}"
-
-    response = requests.get(
-        settings.tag_answer_url,
-        headers=headers,
-        timeout=settings.tag_answer_url_timeout,
-    )
-    response.raise_for_status()
-
-    data = response.json()
-    if not isinstance(data, dict) or not data:
-        raise ValueError(
-            f"expected a non-empty tag -> answer object, got {type(data).__name__}"
-        )
-    return data
-
-
-def _load_local_tag_answers() -> dict:
-    with open(settings.tag_answer_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _load_tag_answers() -> dict:
-    """Load the knowledge base at startup: live from GitHub, with the bundled
-    copy as a fallback so a network blip can't take the server down."""
-    try:
-        data = _fetch_tag_answers()
-        logger.info("fetched %d tags from %s", len(data), settings.tag_answer_url)
-        return data
-    except Exception as exc:
-        if not settings.tag_answer_allow_local_fallback:
-            logger.error("live tag_answer fetch failed and fallback is disabled")
-            raise
-        logger.warning(
-            "live tag_answer fetch failed (%s); falling back to %s",
-            exc,
-            settings.tag_answer_path,
-        )
-
-    data = _load_local_tag_answers()
-    logger.info("loaded %d tags from local fallback", len(data))
-    return data
-
-
-TAG_ANSWERS = _load_tag_answers()
 
 mcp = FastMCP(name="ec-faq-search")
 
@@ -214,6 +159,7 @@ def health() -> dict:
 
 def main() -> None:
     """Run the MCP server over the transport selected by MCP_TRANSPORT."""
+    start_refresh_thread()
     if settings.mcp_transport == "stdio":
         logger.info("starting MCP server on stdio tags=%d", len(TAG_ANSWERS))
         mcp.run(transport="stdio")
