@@ -10,6 +10,8 @@ services:
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      TAG_ANSWER_ALLOW_LOCAL_FALLBACK: ${TAG_ANSWER_ALLOW_LOCAL_FALLBACK:-true}
+      TAG_ANSWER_REFRESH_SECONDS: ${TAG_ANSWER_REFRESH_SECONDS:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
