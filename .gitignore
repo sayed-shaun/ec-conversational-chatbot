@@ -10,3 +10,4 @@ dist/
 .vercel
 .env*
 src/mcp/tag_answer.json
+data/
