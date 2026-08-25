@@ -908,6 +908,7 @@
     const form = new FormData();
     const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
     form.append('file', blob, 'recording.' + ext);
+    form.append('model_type', 'whisper');
 
     const res = await fetch(API_BASE + '/asr/upload', {
       method: 'POST',
