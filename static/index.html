@@ -664,7 +664,7 @@
           collapseThinking();
           chip = el('details', 'tool running', toolsEl);
           const summary = el('summary', null, chip);
-          el('span', 'tool-name', summary).textContent = '\u{1F527} ' + ev.name;
+          el('span', 'tool-name', summary).textContent = '\u{1F527} tool';
           const body = el('div', 'tool-body', chip);
           let args = ev.arguments || '';
           try {
