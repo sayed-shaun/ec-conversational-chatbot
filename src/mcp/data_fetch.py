@@ -49,12 +49,25 @@ def _load_local_tag_answers() -> dict:
         return json.load(f)
 
 
+def _write_local_copy(data: dict) -> None:
+    try:
+        with open(settings.tag_answer_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logger.warning("could not write local fallback copy", exc_info=True)
+
+
 def _load_tag_answers() -> dict:
     """Load the knowledge base at startup: live from GitHub, with the bundled
-    copy as a fallback so a network blip can't take the server down."""
+    copy as a fallback so a network blip can't take the server down.
+
+    A successful live fetch is also written through to tag_answer_path, so
+    every restart syncs the on-disk copy immediately rather than waiting for
+    the next periodic refresh tick."""
     try:
         data = _fetch_tag_answers()
         logger.info("fetched %d tags from %s", len(data), settings.tag_answer_url)
+        _write_local_copy(data)
         return data
     except Exception as exc:
         if not settings.tag_answer_allow_local_fallback:
@@ -89,12 +102,7 @@ def _refresh_tag_answers() -> None:
     TAG_ANSWERS.clear()
     TAG_ANSWERS.update(data)
     logger.info("tag_answer_url refreshed (%d tags)", len(data))
-
-    try:
-        with open(settings.tag_answer_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except OSError:
-        logger.warning("could not write local fallback copy", exc_info=True)
+    _write_local_copy(data)
 
 
 def _refresh_loop() -> None:
