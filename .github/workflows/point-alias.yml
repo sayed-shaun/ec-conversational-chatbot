@@ -1,0 +1,34 @@
+# ec-chatbot.vercel.app is the URL we publish, but it is the default
+# .vercel.app subdomain of a project outside this team, so Vercel will not
+# let it be registered as a project domain that production deploys claim
+# themselves (`vercel domains add` -> alias_conflict). It has to be assigned
+# per deployment, which is what this does — otherwise the published URL
+# silently keeps serving the previous build after every push.
+name: Point ec-chatbot.vercel.app
+
+# Fires when Vercel reports a deployment result back to GitHub, so this runs
+# after the build is actually READY rather than racing it from `on: push`.
+on:
+  deployment_status:
+
+# A slower older run must never overwrite the alias a newer one just set.
+concurrency:
+  group: point-alias
+  cancel-in-progress: false
+
+jobs:
+  alias:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      contains(fromJSON('["Production","production"]'), github.event.deployment.environment)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm install --global vercel@latest
+
+      - name: Re-point the alias
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_SCOPE: sit12
+        run: ./scripts/point-alias.sh

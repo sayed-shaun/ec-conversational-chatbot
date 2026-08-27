@@ -208,11 +208,13 @@ the backend keeps running wherever it is. Three requirements:
 The Vercel project is connected to this repo, so a push to `main` deploys and
 re-points `ec-conversational-chatbot-sit12.vercel.app` automatically.
 
-The canonical URL, **`ec-chatbot.vercel.app`**, is *not* auto-updating: it is
-the default subdomain of a project outside this team, so it can be aliased but
-not registered as a project domain (`vercel domains add` fails with
-`alias_conflict`). Run `scripts/point-alias.sh` after every deploy to move it
-onto the newest production build.
+The canonical URL, **`ec-chatbot.vercel.app`**, cannot auto-update: it is the
+default subdomain of a project outside this team, so it can be aliased but not
+registered as a project domain (`vercel domains add` fails with
+`alias_conflict`). `.github/workflows/point-alias.yml` re-points it on every
+successful production deployment, so this is handled — it needs a
+`VERCEL_TOKEN` repo secret with access to the `sit12` team. Run
+`scripts/point-alias.sh` by hand if you ever need to force it.
 
 ## Using the MCP server on its own
 
