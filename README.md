@@ -162,7 +162,7 @@ actually touch:
 ├── main.py               # `python main.py api` | `python main.py mcp`
 ├── Caddyfile             # /asr* → ASR service, rest → chatbot
 ├── vercel.json           # build step for hosting static/index.html
-├── scripts/load_test.py  # concurrency test for /chat and /chat/stream
+├── scripts/              # load_test.py, point-alias.sh
 ├── static/index.html     # chat UI: markup, styles, SSE client, one file
 └── src/
     ├── core/             # config.py (typed Settings), logger.py
@@ -206,8 +206,13 @@ the backend keeps running wherever it is. Three requirements:
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 
 The Vercel project is connected to this repo, so a push to `main` deploys and
-re-points `ec-conversational-chatbot-sit12.vercel.app` automatically. No manual
-aliasing step is needed.
+re-points `ec-conversational-chatbot-sit12.vercel.app` automatically.
+
+The canonical URL, **`ec-chatbot.vercel.app`**, is *not* auto-updating: it is
+the default subdomain of a project outside this team, so it can be aliased but
+not registered as a project domain (`vercel domains add` fails with
+`alias_conflict`). Run `scripts/point-alias.sh` after every deploy to move it
+onto the newest production build.
 
 ## Using the MCP server on its own
 
