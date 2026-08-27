@@ -162,7 +162,7 @@ actually touch:
 ├── main.py               # `python main.py api` | `python main.py mcp`
 ├── Caddyfile             # /asr* → ASR service, rest → chatbot
 ├── vercel.json           # build step for hosting static/index.html
-├── scripts/              # load_test.py, point-alias.sh
+├── scripts/load_test.py  # concurrency test for /chat and /chat/stream
 ├── static/index.html     # chat UI: markup, styles, SSE client, one file
 └── src/
     ├── core/             # config.py (typed Settings), logger.py
@@ -204,6 +204,10 @@ the backend keeps running wherever it is. Three requirements:
    so the tunnel URL never lands in the repo. Redeploy when it changes.
 
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
+
+The Vercel project is connected to this repo, so a push to `main` deploys and
+re-points `ec-conversational-chatbot-sit12.vercel.app` automatically. No manual
+aliasing step is needed.
 
 ## Using the MCP server on its own
 
