@@ -1,348 +1,215 @@
-# EC FAQ Chatbot (llama.cpp + FastMCP + FastAPI)
+# EC Conversational Chatbot
 
 A context-aware Bengali FAQ chatbot for Bangladesh Election Commission
-NID/voter services. Two containers, one `docker compose up`, plus a
-llama-server you already have running:
+NID/voter services. It answers from your FAQ dataset, not from the model's
+memory: an MCP tool retrieves the closest matching question and the model
+replies grounded in that answer — or admits it doesn't know and points the user
+to `105`.
 
-1. **your llama-server** — this repo does not run llama.cpp itself. Point
-   `LLAMA_BASE_URL` at any OpenAI-compatible llama-server you already have
-   running, on this host or elsewhere on the network.
-2. **`ec-faq-mcp`** — a real MCP server built with
-   [FastMCP](https://gofastmcp.com), exposing one tool, `search_faq`, that
-   bridges to your existing `top_similar` embedding-search API and resolves
-   results to answers via `tag_answer.json`.
-3. **`src/api` + `src/chatbot`** — a FastAPI backend with per-session conversation memory
-   and an OpenAI-style tool-calling loop, plus a static HTML/JS page to test
-   the bot live in your browser.
+llama.cpp + FastMCP + FastAPI. Two containers, one `docker compose up`, plus a
+llama-server you already have running.
 
-```
- Browser ──▶ ec-faq-chatbot (FastAPI, :8000)
-             - session memory (per session_id)
-             - tool-calling loop
-                  │
-                  │ OpenAI-compatible /v1/chat/completions
-                  ▼
-             your llama-server (bring your own, e.g. :8080)
-             - runs your GGUF model
-                  │
-                  │ model requests the search_faq tool
-                  ▼
-             ec-faq-mcp (FastMCP, Streamable HTTP, internal :9000/mcp)
-             - search_faq tool
-                  │
-                  │ POST /ec_bot/top_similar/
-                  ▼
-             your existing top_similar API (:8002)
-                  │
-             tag -> tag_answer.json (bundled in src/mcp/)
+## Quick start
+
+**Prerequisites**
+
+- **A running llama-server** at `LLAMA_BASE_URL` (this repo doesn't run
+  llama.cpp). Needs a tool-calling model (Qwen2.5-Instruct, Llama-3.1/3.2,
+  Hermes-2-Pro, Gemma) started **with `--jinja`** — without it no `tool_calls`
+  are emitted and the bot silently answers from the model instead of your data.
+  Add **`--reasoning off`** too; it cuts turn time from ~31s to ~13s
+  ([details](#performance)). Don't run a second llama.cpp on the same GPU — both
+  will fight for VRAM.
+- **A `GITHUB_TOKEN`** — a PAT with read access to the private knowledge-base
+  repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
+  token logs `fetched 1374 tags` on boot.
+- **The `top_similar` embedding API**, returning `input_question` and
+  `top_similar[].{tag, cosine_similarity}`.
+
+**Run**
+
+```bash
+cp .env.example .env      # set LLAMA_BASE_URL, TOP_SIMILAR_API_URL, GITHUB_TOKEN
+docker compose up --build
 ```
 
-## How it decides what to say
+| | URL |
+|---|---|
+| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 8000) |
+| API docs | `http://localhost:${PORT}/docs` |
+| Health | `http://localhost:${PORT}/health` |
+| MCP server | internal only — `ec-faq-mcp:9000/mcp` |
 
-1. User sends a message via the static chat UI (or any HTTP client) to the
-   chatbot's `/api/v1/chat` endpoint.
-2. The chatbot calls your llama-server with the full conversation
-   history plus one tool definition: `search_faq`.
-3. **If the model thinks the question needs a lookup** (NID fees, voter
-   registration, corrections, etc.), it calls `search_faq`. The MCP server:
-   - queries your `top_similar` API for the top-k nearest questions,
-   - deduplicates results by `tag`,
-   - resolves each unique tag to its answer via `tag_answer.json`,
-   - returns the best answer + confidence + alternatives.
-4. The model reads the tool result and replies, grounded in the retrieved
-   answer. If confidence is low, it says it doesn't know and points the
-   user to `105`.
-5. **If the message is just small talk** ("hi", "thanks", "bye"), the model
-   answers directly without calling the tool.
-6. The full exchange (including tool calls) is kept in that session's
-   history, so follow-up questions retain context.
+Both containers share one entrypoint: `python main.py api` / `python main.py
+mcp`. The chatbot waits for `ec-faq-mcp` to report healthy; llama-server isn't
+gated by compose, so until it's up chat requests return the "call 105" fallback.
 
-### The same flow as a chart
+## How it works
+
+| Component | Port | Role |
+|---|---|---|
+| **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
+| **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
+| **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
+| **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
+| **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
 
 ```mermaid
-flowchart TD
-    U([User types a message]) --> POST["POST /api/v1/chat<br/>{session_id, message}"]
-    POST --> HIST["Chat.load(session_id)<br/>checkpointed history + system prompt"]
-    HIST --> LLM["your llama-server<br/>/v1/chat/completions<br/>+ search_faq tool schema"]
-
-    LLM --> Q{"Model returned<br/>tool_calls?"}
-
-    Q -->|"No — small talk<br/>(hi, thanks, bye)"| DIRECT["Use message content<br/>as the reply"]
-
-    Q -->|"Yes — factual question"| MCP["MCP client opens session<br/>to ec-faq-mcp:9000/mcp"]
-    MCP --> TOOL["search_faq(question, top_k)"]
-    TOOL --> SIM["POST top_similar API :8002<br/>returns top-k nearest questions"]
-    SIM --> DEDUP["De-duplicate by tag<br/>keep highest-ranked per tag"]
-    DEDUP --> RESOLVE["Resolve each tag via<br/>tag_answer.json (1374 tags)"]
-    RESOLVE --> CONF{"best_score >=<br/>CONFIDENCE_THRESHOLD?"}
-
-    CONF -->|Yes| PAYLOAD["confident: true<br/>+ best_answer + alternatives"]
-    CONF -->|No| PAYLOAD2["confident: false<br/>model must admit it doesn't know"]
-
-    PAYLOAD --> FEED
-    PAYLOAD2 --> FEED["Append tool result to history"]
-    FEED --> HOPS{"hop < MAX_TOOL_HOPS?"}
-    HOPS -->|Yes| LLM
-    HOPS -->|"No — safety cap hit"| FB["FALLBACK_REPLY<br/>'call 105'"]
-
-    DIRECT --> SAVE
-    FB --> SAVE["Chat.save()<br/>trim + checkpoint to SQLite"]
-    SAVE --> RESP(["Reply returned to the UI<br/>{session_id, reply}"])
+flowchart LR
+    B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
+    CADDY --> BOT["ec-faq-chatbot<br/>tool-calling loop"]
+    BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
+    BOT -->|"model asked for search_faq"| MCP["ec-faq-mcp"]
+    MCP --> SIM["top_similar API"]
+    MCP --> TAG[("tag_answer.json")]
+    MCP -.->|"best answer + confident"| BOT
+    BOT --> DB[("SQLite<br/>transcripts")]
 ```
 
-## Streaming
+**The chatbot orchestrates, not the model.** llama-server never talks to the
+MCP server: it only *asks* for `search_faq` in a `tool_calls` response, and
+`src/chatbot/chat.py` executes the call, appends the result to the transcript,
+and calls llama-server again — up to `MAX_TOOL_HOPS` times.
 
-`POST /api/v1/chat` still returns one JSON reply, but the UI uses
-`POST /api/v1/chat/stream`, which returns Server-Sent Events so nothing waits
-on the full answer. A tool-backed reply takes ~9s end to end; with streaming
-the first thinking token lands in well under a second.
+The model decides whether a question needs a lookup. If it does, `search_faq`
+queries `top_similar`, de-duplicates by `tag`, resolves each tag to its answer,
+and returns the best one with a confidence flag and alternatives. Below
+`CONFIDENCE_THRESHOLD` the system prompt tells the model to admit it doesn't
+know. Small talk skips the tool. Everything, tool calls included, stays in the
+session history so follow-ups keep context.
 
-Each SSE frame is `data: {json}`, terminated by `data: [DONE]`:
+## API
 
-| `type` | meaning |
+| Endpoint | Purpose |
 |---|---|
-| `start` | carries the `session_id` for this turn |
-| `reasoning` | a chunk of the model thinking out loud (**not** part of the reply) |
-| `tool_call` | the model invoked a tool — `name` + `arguments` |
-| `tool_result` | condensed result: `confident`, `best_tag`, `best_score`, `threshold`, `candidates[]` |
-| `token` | a chunk of the actual answer |
-| `done` | the fully assembled `reply` |
-| `error` | something failed mid-turn |
+| `POST /api/v1/chat` | One JSON request, one JSON reply |
+| `POST /api/v1/chat/stream` | The same turn as SSE — the UI uses this |
+| `POST /api/v1/reset` | Clear a session's transcript |
 
-`reasoning` is streamed separately because llama-server emits it as a
-non-standard `reasoning_content` delta. Keeping it out of `content` is what
-lets the UI show thinking in a collapsible block without polluting the answer
-or the stored history.
+**SSE frames** are `data: {json}`, terminated by `data: [DONE]`:
 
-### Live tool-call view
+| `type` | Payload |
+|---|---|
+| `start` | `session_id` for this turn |
+| `reasoning` | Model thinking out loud — **not** part of the reply |
+| `tool_call` | `name` + `arguments` |
+| `tool_result` | `confident`, `best_tag`, `best_score`, `threshold`, `candidates[]` |
+| `token` | A chunk of the answer |
+| `done` | The assembled `reply` |
+| `error` | Something failed mid-turn |
 
-The UI renders each `tool_call` as a chip showing the tool name and arguments
-with a spinner, then fills in the `tool_result` underneath — confident vs low
-confidence, the matched tag, the score against the active threshold, and the
-other candidates. Thinking auto-collapses as soon as the first answer token
-arrives.
+`reasoning` is separate because llama-server emits it as a non-standard
+`reasoning_content` delta; keeping it out of `content` lets the UI show thinking
+in a collapsible block without polluting the answer or the stored history. The
+UI renders each tool call as a chip with its arguments, result, matched tag and
+score, and shows total turn time under each answer.
+
+**Voice input**: the UI records with `MediaRecorder` and posts to `/asr/upload`;
+Caddy proxies `/asr*` to `ASR_URL`, so the browser only talks to this stack's
+own origin.
+
+**Load testing**: `ab`/`wrk` can't measure the SSE endpoint (they see one
+long-lived response). Use `scripts/load_test.py`:
+
+```bash
+python scripts/load_test.py --url http://172.31.60.228:9100 \
+    --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
+```
 
 ### Retrieval parameters
 
-The parameter panel sends a `params` object with every request. `top_k` is
-forwarded to the `top_similar` API; the rest are implemented in
-`search_faq` (`src/mcp/server.py`), since the upstream API accepts only
-`question` and `top_k`:
+The UI sends a `params` object per request. `top_k` is forwarded to
+`top_similar`; the rest are implemented in `search_faq`
+(`src/mcp/server.py`), since the upstream API accepts only `question` and
+`top_k`.
 
-| param | effect |
+| Param | Effect |
 |---|---|
-| `top_k` | how many nearest neighbours to retrieve before tag de-duplication |
-| `min_score` | per-request override of `CONFIDENCE_THRESHOLD` |
-| `min_score_ratio` | required margin: best must score `>= runner_up * ratio` to count as confident. `1.0` demands no margin |
-| `handle_unknown` | when not confident, replace the answer with the explicit "call 105" text instead of a probably-wrong one |
-| `show_candidates` | include the `alternatives` list in the result |
+| `top_k` | Neighbours to retrieve before tag de-duplication |
+| `min_score` | Per-request override of `CONFIDENCE_THRESHOLD` |
+| `min_score_ratio` | Best must score `>= runner_up * ratio` to count as confident; `1.0` demands no margin |
+| `handle_unknown` | When not confident, return the explicit "call 105" text instead of a probably-wrong answer |
+| `show_candidates` | Include `alternatives` in the result |
 
-`min_score_ratio` and `handle_unknown` had no prior definition anywhere in
-the stack — the semantics above are the ones I implemented. If your other
-bot defines them differently, this is the place to reconcile.
+## Configuration
+
+Every variable is typed and validated in `src/core/config.py`
+(`chatbot_settings`, `mcp_settings`) via `pydantic-settings`. Process env wins,
+then `.env`, then the defaults in that file. Names map case-insensitively
+(`top_similar_api_url` ↔ `TOP_SIMILAR_API_URL`), so no Python edits are needed
+to change a setting. `.env.example` documents the full list; the ones you'll
+actually touch:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
+| `TOP_SIMILAR_API_URL` | `…:8002/ec_bot/top_similar/` | Embedding search API |
+| `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
+| `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
+| `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
+| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
+| `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
+| `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
+| `PORT` | `8000` | The only port published on the host |
+| `ASR_URL` | `http://172.31.60.228:8000` | Speech-to-text behind `/asr*` |
+
+`src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
+`TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.
 
 ## Repo layout
 
 ```
-ec-faq-chatbot/
-├── main.py                   # entrypoint: `python main.py api` | `python main.py mcp`
-├── docker-compose.yml
-├── .env.example
-├── pyproject.toml            # single dependency/build definition for both services
-├── api.Dockerfile            # chatbot image: FastAPI + OpenAI SDK
-├── mcp.Dockerfile            # MCP server image
-├── Caddyfile                 # reverse proxy in front of ec-faq-chatbot
-├── vercel.json               # build step for hosting static/index.html on Vercel
-├── static/
-│   └── index.html            # chat UI: markup, styles, and the SSE
-│                              # streaming client, all in one file
+├── main.py               # `python main.py api` | `python main.py mcp`
+├── Caddyfile             # /asr* → ASR service, rest → chatbot
+├── vercel.json           # build step for hosting static/index.html
+├── scripts/              # load_test.py, point-alias.sh
+├── static/index.html     # chat UI: markup, styles, SSE client, one file
 └── src/
-    ├── core/                 # shared by every service
-    │   ├── config.py         # typed Settings: chatbot_settings, mcp_settings
-    │   └── logger.py         # get_logger() / configure_logging(), LOG_LEVEL
-    ├── api/                  # every FastAPI import lives in here
-    │   ├── app.py            # create_app(): static mount, /health, v1 router
-    │   └── v1/               # versioned HTTP layer, served under /api/v1
-    │       ├── routes.py     # POST /chat, /chat/stream (SSE), /reset
-    │       └── schemas.py    # request/response models
-    ├── chatbot/              # domain logic, no web framework
-    │   ├── chat.py           # Chat: one conversation, the tool-calling loop
-    │   ├── checkpointer.py   # SqliteCheckpointer: transcripts + idle expiry
-    │   ├── client.py         # OpenAIClient (llama-server) + McpClient (search_faq)
-    │   ├── prompt.py         # system prompt and canned replies (Bengali text)
-    │   └── tools.py          # tool catalogue, dispatch, result summary
-    └── mcp/                  # MCP container
-        ├── server.py         # FastMCP tool: search_faq (+ health)
-        └── tag_answer.json   # local fallback (live copy pulled from GitHub)
+    ├── core/             # config.py (typed Settings), logger.py
+    ├── api/              # the only place FastAPI is imported
+    │   ├── app.py        # create_app(): static mount, /health, v1 router
+    │   └── v1/           # routes.py (/chat, /chat/stream, /reset), schemas.py
+    ├── chatbot/          # domain logic, no web framework
+    │   ├── chat.py       # one conversation, the tool-calling loop
+    │   ├── checkpointer.py  # SqliteCheckpointer: transcripts + idle expiry
+    │   ├── client.py     # OpenAIClient (llama-server) + McpClient
+    │   ├── prompt.py     # system prompt and canned replies (Bengali)
+    │   └── tools.py      # tool catalogue, dispatch, result summary
+    └── mcp/              # server.py (search_faq) + tag_answer.json fallback
 ```
 
-## Configuration
+Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
+`src/api/`, so `src/chatbot/` can be used or tested without a web server.
 
-Every environment variable is declared, typed, and validated in one place
-per service, using `pydantic-settings`:
+## Hosting the UI separately (Vercel)
 
-- `mcp_settings` in `src/core/config.py` — `top_similar_api_url`, `top_similar_timeout`,
-  `tag_answer_path`, `confidence_threshold`, `mcp_transport`, `mcp_host`,
-  `mcp_port`, `mcp_path`.
-- `chatbot_settings` in `src/core/config.py` — `llama_base_url`, `llama_model`, `mcp_server_url`,
-  `max_history_turns`, `max_tool_hops`, `api_host`, `api_port`.
+`static/index.html` is self-contained, so it can be deployed on its own while
+the backend keeps running wherever it is. Three requirements:
 
-Both classes read from process environment variables first (matching
-`docker-compose.yml`), falling back to a local `.env` file for standalone
-runs outside Docker, then to the defaults shown in `src/core/config.py`. Field
-names map to env vars case-insensitively (`top_similar_api_url` ↔
-`TOP_SIMILAR_API_URL`), so you never need to touch the Python to change a
-setting — just edit `.env` or `docker-compose.yml`.
-
-## Before you run this
-
-**1. Have a llama-server already running.**
-This repo does not run llama.cpp — it expects an OpenAI-compatible
-`llama-server` reachable at `LLAMA_BASE_URL`, on this host or elsewhere on
-the network. It must serve a tool-calling-capable model (Qwen2.5-Instruct,
-Llama-3.1/3.2-Instruct, Hermes-2-Pro, Gemma with `--jinja`, etc.) and must
-have been started **with `--jinja`** — without it `llama-server` never emits
-`tool_calls`, and the bot silently answers from the model instead of your
-FAQ data. `LLAMA_BASE_URL` defaults to `http://host.docker.internal:8080/v1`,
-i.e. one published on this host; override it for a llama-server elsewhere.
-
-**2. ~~Verify the `top_similar` endpoint path.~~ Verified.**
-`TOP_SIMILAR_API_URL=http://172.31.60.228:8002/ec_bot/top_similar/` is
-correct. A POST there returns `200` with exactly the shape `search_faq`
-expects (`input_question`, `top_similar[].tag`, `.cosine_similarity`).
-No action needed.
-
-**3. `GITHUB_TOKEN` is required.**
-The MCP server fetches `tag_answer.json` **live from GitHub at startup**
-(`TAG_ANSWER_URL`, default: the `development` branch of
-`Synesis-IT-PLC/ec-faq-bot`). That repo is **private** — verified: the raw URL
-returns `404` with no token and `200` with one. Set `GITHUB_TOKEN` to a PAT
-with read access, or the fetch fails and the server silently falls back to the
-bundled copy. With a valid token the server logs `fetched 1374 tags` on boot.
-
-`src/mcp/tag_answer.json` is a snapshot of that dataset, used only when the
-live fetch fails. Set `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup
-loudly instead of serving a possibly stale snapshot. The knowledge base is read
-once at start, so a dataset change needs a
-`docker compose restart ec-faq-mcp`.
-
-### Gotchas found while bringing this up
-
-- **The MCP healthcheck must use `initialize`, not `ping`.** MCP Streamable
-  HTTP requires the `initialize` handshake before any other method, so a
-  bare `ping` returns `400` forever and the container never goes healthy —
-  which blocks `ec-faq-chatbot` via `depends_on`. Fixed in `docker-compose.yml`.
-- **A second llama.cpp on the same GPU competes with the first.** If you
-  are tempted to run your own here as well as the one already on the host,
-  don't — two models load into the same VRAM and one, or both, will OOM.
-  Point `LLAMA_BASE_URL` at the existing one instead.
-
-## Running it
-
-```bash
-cp .env.example .env
-# edit .env: set LLAMA_BASE_URL to your llama-server, fix TOP_SIMILAR_API_URL
-# if needed, and GITHUB_TOKEN for the private knowledge-base repo
-
-docker compose up --build
-```
-
-Both containers start through the same root entrypoint — `python main.py api`
-for the chatbot and `python main.py mcp` for the MCP server.
-
-Dependencies run one way: `api -> chatbot -> core`. FastAPI is imported only
-under `src/api/`, so the chat engine and clients in `src/chatbot/` can be
-used, or tested, without a web server involved.
-
-The chatbot won't accept traffic until `ec-faq-mcp` reports healthy
-(`depends_on: service_healthy`); llama-server readiness is not gated by
-compose, since it is not a container this repo manages. If it isn't
-reachable yet, chat requests fail over to the "call 105" fallback reply
-until it is.
-
-Only the chat UI is published on the host. The MCP server stays on the
-compose network, so nothing unauthenticated is exposed there:
-
-- **Chat UI**: `http://localhost:${PORT}/static/index.html` (PORT default 8000)
-- **API docs**: `http://localhost:${PORT}/docs` (Swagger UI; `/redoc` and
-  `/openapi.json` are served too)
-- **Health check**: `http://localhost:${PORT}/health`
-- `http://localhost:${PORT}/` redirects to the chat UI
-- **MCP server** — internal only, as `ec-faq-mcp:9000/mcp`
-
-To inspect the MCP server while debugging, go in through a container rather
-than publishing a port:
-
-```bash
-docker compose exec ec-faq-chatbot curl -s http://ec-faq-mcp:9000/mcp
-```
-
-## Hosting the UI separately (e.g. on Vercel)
-
-`static/index.html` is a single self-contained file, so it can be deployed
-on its own -- Vercel serves only that file; the backend (this repo's
-`docker compose` stack) keeps running wherever it already runs. Getting a
-page on a different origin to talk to this API needs three things:
-
-1. **The backend must be reachable over HTTPS.** An HTTPS page cannot call
-   a plain HTTP API (the browser blocks it as mixed content). This repo
-   uses [Caddy](https://caddyfile.dev) as the single entry point in front
-   of the chatbot -- see the `caddy` service in `docker-compose.yml` -- and
-   an optional `ngrok` service to tunnel that over HTTPS without needing a
-   domain or certificate yet:
+1. **HTTPS backend.** An HTTPS page can't call an HTTP API. Caddy fronts the
+   chatbot; an optional `ngrok` service tunnels it without a domain:
 
    ```bash
-   # set NGROK_AUTHTOKEN in .env first -- from
-   # https://dashboard.ngrok.com/get-started/your-authtoken
-   docker compose --profile public up -d
+   docker compose --profile public up -d     # needs NGROK_AUTHTOKEN in .env
    curl -s http://localhost:4040/api/tunnels | python3 -c \
      "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
    ```
 
-   That prints the current public HTTPS URL. On ngrok's free tier it
-   changes every restart, which is exactly why the next step reads it from
-   an environment variable rather than committing it.
+   It's a separate profile so a plain `docker compose up` never needs an ngrok
+   account. On the free tier the URL changes every restart — hence step 2.
 
-2. **`static/index.html`'s `API_BASE` must point at that URL.** The file
-   defaults to `API_BASE = ''` (same-origin), which is what this repo's own
-   `docker compose` deployment needs and must keep working. `vercel.json`
-   patches that one line at Vercel's build time from an `NGROK_URL`
-   environment variable set in the Vercel project settings, so the tunnel
-   URL lives in Vercel's config, never hardcoded in the repo:
+2. **`API_BASE` must point at that URL.** The file defaults to `''`
+   (same-origin), which this repo's own deployment needs. `vercel.json` patches
+   that line at build time from an `NGROK_URL` env var set in the Vercel project,
+   so the tunnel URL never lands in the repo. Redeploy when it changes.
 
-   ```json
-   {
-     "buildCommand": "sed -i \"s|const API_BASE = '';|const API_BASE = '$NGROK_URL';|\" static/index.html",
-     "outputDirectory": "static"
-   }
-   ```
+3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 
-   Deploying: connect this repo to a Vercel project, set `NGROK_URL` to the
-   URL from step 1 in that project's Environment Variables, and deploy.
-   Redeploy whenever the tunnel URL changes.
+## Using the MCP server on its own
 
-3. **The backend must allow the Vercel origin via CORS.** `CORS_ALLOW_ORIGINS`
-   defaults to `*`, which works immediately but is worth tightening once
-   the Vercel domain is known:
-
-   ```
-   CORS_ALLOW_ORIGINS=https://your-project.vercel.app
-   ```
-
-`ngrok` is intentionally its own compose profile (`--profile public`), off
-by default, so a plain `docker compose up` never depends on an ngrok
-account. `NGROK_AUTHTOKEN` is unset-safe when that profile is inactive; a
-missing or invalid token only surfaces (clearly, from ngrok's own binary)
-when the profile is actually started, and `restart: on-failure:3` caps the
-retries instead of restart-looping forever on a bad token.
-
-## Testing the MCP tool directly (without the chatbot or llama.cpp)
-
-The MCP server is not published on the host, so call it from inside the
-compose network:
+The MCP server isn't published on the host, so call it from inside the network:
 
 ```bash
-docker compose up -d ec-faq-mcp
 docker compose exec ec-faq-chatbot python - <<'PY'
 import asyncio, json
 from fastmcp import Client
@@ -357,108 +224,52 @@ asyncio.run(main())
 PY
 ```
 
-## Using the MCP server from Claude Desktop / Claude Code instead
+`src/mcp/server.py` also speaks stdio, so it runs as a local MCP server for
+Claude Desktop / Claude Code — `pip install ".[mcp]"`, then set
+`MCP_TRANSPORT=stdio` and `TOP_SIMILAR_API_URL` in the client's server config
+with `command: python`, `args: ["main.py", "mcp"]`.
 
-`src/mcp/server.py` also supports stdio transport, so you can run it
-directly as a local MCP server (outside Docker) for other MCP clients:
+## Performance
 
-```bash
-pip install ".[mcp]"
-MCP_TRANSPORT=stdio TOP_SIMILAR_API_URL=http://172.31.60.228:8002/ec_bot/top_similar/ python main.py mcp
-```
+A tool-backed turn pauses for several seconds after the tool result, then
+streams fast. It isn't prefill (0.11s) or the MCP round trip (1.06s) — it's the
+model running a **second reasoning pass** (9.07s, 258 chunks), re-narrating the
+tool result to itself. Reasoning models pay this on every hop.
 
-Claude Desktop config (`claude_desktop_config.json`):
+**Fix: start llama-server with `--reasoning off`.** Over the same four
+questions, same build, same machine:
 
-```json
-{
-  "mcpServers": {
-    "ec-faq-search": {
-      "command": "python",
-      "args": ["main.py", "mcp"],
-      "cwd": "/absolute/path/to/ec-faq-chatbot",
-      "env": {
-        "MCP_TRANSPORT": "stdio",
-        "TOP_SIMILAR_API_URL": "http://172.31.60.228:8002/ec_bot/top_similar/"
-      }
-    }
-  }
-}
-```
-
-## Latency: the pause before an answer starts
-
-The tool call and its result come back quickly, then nothing appears for
-several seconds, then the answer streams fast. Measured breakdown of one
-turn:
-
-| stage | time |
-|---|---|
-| first reasoning token | 0.33s |
-| `tool_call` emitted | 8.12s |
-| MCP round trip | 1.06s |
-| prefill after the tool result | **0.11s** |
-| second reasoning pass | **9.07s** |
-| reasoning to first answer token | 0.11s |
-| answer generation | 7.16s |
-
-The pause is neither prefill nor the MCP call. It is the model running a
-second thinking pass, re-narrating the tool result to itself before writing
-anything -- 258 reasoning chunks in that sample. Reasoning models
-(Gemma 3n/4, Qwen3, ...) do this on every hop, so a tool-backed turn pays
-for it twice.
-
-**Fix: start llama-server with `--reasoning off`** (or
-`--reasoning-budget 0`). Measured over the same four questions, same
-build, same machine:
-
-| | tool called | replied in Bengali | avg turn |
+| | Tool called | Bengali reply | Avg turn |
 |---|---|---|---|
-| reasoning on (default) | 4/4 | 4/4 | 30.9s |
+| Reasoning on | 4/4 | 4/4 | 30.9s |
 | `--reasoning off` | 4/4 | 4/4 | **13.3s** |
 
-No quality loss showed up. On the hardest case in the set -- a compound
-question spanning two facts (a country and an age) -- reasoning off was
-both 4.5x faster (8.0s vs 36.3s) and *better*: it named the user's country
-explicitly, which the reasoning run failed to do.
+No quality loss appeared; on the hardest case it was 4.5× faster *and* better.
+Caveat: four questions is not a benchmark. `LLAMA_REASONING_EFFORT` forwards
+`reasoning_effort` per request as a softer alternative, but proved unreliable
+through the streaming path (247, 101 and 0 reasoning chunks across three
+identical runs) — the server flag is the dependable lever.
 
-Two honest caveats. The sample is four questions, not a benchmark. And in
-an earlier ad-hoc run with reasoning off, one request skipped the tool call
-and one answered in English; neither reproduced in the structured runs, so
-they look like ordinary nondeterminism rather than a consequence of the
-flag -- but worth watching for.
+## Limitations
 
-`LLAMA_REASONING_EFFORT` in this repo forwards `reasoning_effort` per
-request as a softer alternative. It is off by default because it proved
-unreliable through the streaming path: three runs of the same question
-produced 247, 101 and 0 reasoning chunks. The server flag is the dependable
-lever.
+- **SQLite checkpointing** (`chat-sessions` volume) survives restarts, but it's
+  durability, not scale — replicas sharing one file over a volume is fragile,
+  and across hosts it doesn't work. That needs Redis or Postgres behind the same
+  interface.
+- **Sessions expire on idle**, since HTTP gives no end-of-chat signal. This also
+  bounds retention, which matters because transcripts contain citizens'
+  questions.
+- **No auth on any service.** Beyond localhost/LAN, put an authenticating
+  reverse proxy in front of `8000`, `8080` and `9000`.
 
-The UI shows the total turn time under each answer, with the split (time to
-the tool result, time to the first answer token, time writing) on hover, so
-this is measurable from the browser without instrumenting anything.
+## Troubleshooting
 
-## Notable design choices / limitations
-
-- **Transcripts are checkpointed to SQLite** (`src/chatbot/checkpointer.py`)
-  in the `chat-sessions` volume, so a restart mid-conversation does not lose
-  context. This is durability, not horizontal scale: one container against
-  one file is fine, but several replicas sharing it over a volume is fragile
-  and across hosts does not work at all. That needs Redis or Postgres behind
-  the same interface.
-- **Conversations are cleared once they end.** HTTP gives no end-of-chat
-  signal, so "ended" means idle: a background sweeper deletes transcripts
-  untouched for `SESSION_TTL_MINUTES` (default 60), checked every
-  `SESSION_SWEEP_MINUTES`. Set the TTL to 0 to keep transcripts until the
-  user resets explicitly. This also bounds what the database retains, which
-  matters because these transcripts contain citizens' questions.
-- **History trimming** is turn-count based (`MAX_HISTORY_TURNS`), not
-  token-based. If your model's context window is small and answers are
-  long, lower this value in `.env`.
-- **Confidence threshold**: answers with `cosine_similarity` below
-  `CONFIDENCE_THRESHOLD` (default `0.55`) are flagged as unreliable — the
-  system prompt tells the model to admit it doesn't know rather than guess.
-  Tune this after testing against real questions.
-- **No auth on any service.** If you deploy this beyond localhost/LAN
-  testing, put a reverse proxy (nginx/Caddy) with auth in front of ports
-  `8000`, `8080`, and `9000` — none of these services authenticate requests
-  on their own.
+| Symptom | Cause |
+|---|---|
+| Answers ignore your FAQ data | llama-server started without `--jinja`, so no `tool_calls` |
+| MCP never healthy, chatbot won't start | Healthcheck must use `initialize`, not `ping` — already fixed in `docker-compose.yml` |
+| Logs fall back to the bundled `tag_answer.json` | `GITHUB_TOKEN` missing or lacking read access |
+| Every reply takes ~30s | Reasoning is on — restart with `--reasoning off` |
+| llama-server OOMs | A second llama.cpp competing for the same VRAM |
+| Replies are always the "call 105" fallback | llama-server unreachable at `LLAMA_BASE_URL` |
+| Vercel UI can't reach the backend | Mixed content, stale `NGROK_URL`, or `CORS_ALLOW_ORIGINS` too tight |

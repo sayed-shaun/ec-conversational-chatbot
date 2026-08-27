@@ -7,11 +7,11 @@
 # Run this after every deploy (manual or GitHub-triggered) to re-point it.
 #
 # Requires: the vercel CLI, logged in (`vercel login`) with access to the
-# sit12 team's ec-chatbot project, and `jq`.
+# sit12 team's ec-conversational-chatbot project, and `jq`.
 
 set -euo pipefail
 
-PROJECT="ec-chatbot"
+PROJECT="ec-conversational-chatbot"
 ALIAS="ec-chatbot.vercel.app"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
