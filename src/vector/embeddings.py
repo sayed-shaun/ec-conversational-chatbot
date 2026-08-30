@@ -16,36 +16,28 @@ explicitly rather than relying on fastembed to guess it for a custom model.
 
 from functools import lru_cache
 
+from fastembed import TextEmbedding
+from fastembed.common.model_description import ModelSource, PoolingType
+
 from src.core.config import vector_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-_CUSTOM_MODEL = "intfloat/multilingual-e5-large-instruct"
-_CUSTOM_MODEL_DIM = 1024
-
-# Task description baked into the query instruction prefix, per the E5
-# instruct convention -- describes what a query is being matched against.
-_RETRIEVAL_TASK = "Given a question, retrieve the FAQ entry that best answers it"
-
 
 def _register_custom_model_if_needed() -> None:
-    from fastembed import TextEmbedding
-    from fastembed.common.model_description import ModelSource, PoolingType
-
-    if settings.EMBEDDING_MODEL_NAME != _CUSTOM_MODEL:
-        return
     already_registered = any(
-        m["model"] == _CUSTOM_MODEL for m in TextEmbedding.list_supported_models()
+        m["model"] == settings.EMBEDDING_MODEL_NAME
+        for m in TextEmbedding.list_supported_models()
     )
     if already_registered:
         return
     TextEmbedding.add_custom_model(
-        model=_CUSTOM_MODEL,
+        model=settings.EMBEDDING_MODEL_NAME,
         pooling=PoolingType.MEAN,
         normalization=True,
-        sources=ModelSource(hf=_CUSTOM_MODEL),
-        dim=_CUSTOM_MODEL_DIM,
+        sources=ModelSource(hf=settings.EMBEDDING_MODEL_NAME),
+        dim=settings.EMBEDDING_DIM,
         model_file="onnx/model.onnx",
         additional_files=["onnx/model.onnx_data"],
         description="E5 multilingual instruct embedding model.",
@@ -56,8 +48,6 @@ def _register_custom_model_if_needed() -> None:
 
 @lru_cache(maxsize=1)
 def _model():
-    from fastembed import TextEmbedding
-
     _register_custom_model_if_needed()
     logger.info("loading embedding model %s", settings.EMBEDDING_MODEL_NAME)
     return TextEmbedding(
@@ -66,9 +56,7 @@ def _model():
 
 
 def _query_text(text: str) -> str:
-    if settings.EMBEDDING_MODEL_NAME == _CUSTOM_MODEL:
-        return f"Instruct: {_RETRIEVAL_TASK}\nQuery: {text}"
-    return text
+    return f"Instruct: {settings.RETRIEVAL_TASK}\nQuery: {text}"
 
 
 def embed_query(text: str) -> list[float]:

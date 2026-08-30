@@ -239,6 +239,14 @@ class VectorSettings(BaseSettings):
         default="/root/.cache/fastembed_cache",
         description="Where fastembed caches downloaded model weights.",
     )
+    RETRIEVAL_TASK: str = Field(
+        default="Given a question, retrieve the FAQ entry that best answers it",
+        description=(
+            "Task description baked into the query instruction prefix, per "
+            "the E5-instruct convention ('Instruct: {task}\\nQuery: "
+            "{text}') -- describes what a query is being matched against."
+        ),
+    )
     INDEX_API_KEY: str = Field(
         default="",
         description=(
