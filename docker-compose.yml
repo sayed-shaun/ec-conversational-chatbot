@@ -2,7 +2,7 @@ services:
 
   pgvector-db:
     image: pgvector/pgvector:pg16
-    container_name: ec-faq-pgvector-db
+    container_name: ec-conversational-pgvector-db
     environment:
       POSTGRES_USER: ${VECTOR_DB_USER:-ec_faq}
       POSTGRES_PASSWORD: ${VECTOR_DB_PASSWORD:-ec_faq}
@@ -16,11 +16,11 @@ services:
       timeout: 5s
       retries: 5
 
-  ec-faq-vector:
+  ec-conversational-vector:
     build:
       context: .
       dockerfile: vector.Dockerfile
-    container_name: ec-faq-vector
+    container_name: ec-conversational-vector
     environment:
       DATABASE_URL: ${VECTOR_DATABASE_URL:-postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq}
       EMBEDDING_MODEL_NAME: ${VECTOR_EMBEDDING_MODEL_NAME:-intfloat/multilingual-e5-large-instruct}
@@ -48,13 +48,13 @@ services:
       retries: 5
       start_period: 60s
 
-  ec-faq-mcp:
+  ec-conversational-mcp:
     build:
       context: .
       dockerfile: mcp.Dockerfile
-    container_name: ec-faq-mcp
+    container_name: ec-conversational-mcp
     environment:
-      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://ec-faq-vector:8001/top_similar}
+      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://ec-conversational-vector:8001/top_similar}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
@@ -69,7 +69,7 @@ services:
     volumes:
       - ./data:/data
     depends_on:
-      ec-faq-vector:
+      ec-conversational-vector:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -78,16 +78,16 @@ services:
       timeout: 5s
       retries: 5
 
-  ec-faq-chatbot:
+  ec-conversational-chatbot:
     build:
       context: .
       dockerfile: api.Dockerfile
-    container_name: ec-faq-chatbot
+    container_name: ec-conversational-chatbot
     environment:
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
-      MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
+      MCP_SERVER_URL: http://ec-conversational-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
@@ -100,7 +100,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      ec-faq-mcp:
+      ec-conversational-mcp:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -111,7 +111,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: ec-faq-caddy
+    container_name: ec-conversational-caddy
     environment:
       ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
     volumes:
@@ -119,13 +119,13 @@ services:
     ports:
       - "${PORT:-8000}:80"
     depends_on:
-      ec-faq-chatbot:
+      ec-conversational-chatbot:
         condition: service_healthy
     restart: unless-stopped
 
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: ec-faq-ngrok
+    container_name: ec-conversational-ngrok
     profiles: [ "public" ]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}

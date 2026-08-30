@@ -4,7 +4,7 @@
 	}
 
 	handle {
-		reverse_proxy ec-faq-chatbot:8000 {
+		reverse_proxy ec-conversational-chatbot:8000 {
 			flush_interval -1
 		}
 	}

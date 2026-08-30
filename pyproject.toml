@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ec-faq-chatbot"
+name = "ec-conversational-chatbot"
 version = "1.0.0"
 description = "Context-aware Bengali FAQ chatbot for the Bangladesh Election Commission (llama.cpp + MCP)"
 requires-python = ">=3.11"
@@ -40,7 +40,7 @@ dev = [
 ]
 
 [project.scripts]
-ec-faq-mcp = "src.mcp.server:main"
+ec-conversational-mcp = "src.mcp.server:main"
 
 [tool.setuptools]
 packages = [
