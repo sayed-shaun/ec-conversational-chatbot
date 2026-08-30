@@ -47,90 +47,31 @@ class ChatbotSettings(BaseSettings):
 
     model_config = _BASE_CONFIG
 
-    LLAMA_BASE_URL: str = Field(
-        default="http://172.31.60.228:8080/v1",
-        description="Base URL of the OpenAI-compatible llama-server API.",
-    )
-    LLAMA_MODEL: str = Field(
-        default="local-model",
-        description=(
-            "Model name sent in chat-completion requests "
-            "(llama-server usually ignores it)."
-        ),
-    )
+    LLAMA_BASE_URL: str = "http://172.31.60.228:8080/v1"
+    # llama-server usually ignores this field, but the OpenAI client requires one.
+    LLAMA_MODEL: str = "local-model"
+    # 'none' suppresses most of the thinking pass -- the bulk of the delay
+    # between a tool result and the first answer token on a reasoning model.
+    # Empty leaves the model's default. Unreliable through the streaming path;
+    # prefer llama-server's own --reasoning off.
+    LLAMA_REASONING_EFFORT: str = ""
 
-    LLAMA_REASONING_EFFORT: str = Field(
-        default="",
-        description=(
-            "Passed through as reasoning_effort on chat-completion requests. "
-            "Empty leaves the model's default. 'none' suppresses most of the "
-            "thinking pass, which on a reasoning model is the bulk of the "
-            "delay between a tool result and the first answer token."
-        ),
-    )
+    MCP_SERVER_URL: str = "http://ec-conversational-mcp:9000/mcp"
 
-    MCP_SERVER_URL: str = Field(
-        default="http://ec-faq-mcp:9000/mcp",
-        description="Streamable HTTP endpoint of the EC FAQ MCP server.",
-    )
+    # '*' is fine here since no cookies/auth headers are used cross-origin.
+    CORS_ALLOW_ORIGINS: str = "*"
 
-    CORS_ALLOW_ORIGINS: str = Field(
-        default="*",
-        description=(
-            "Comma-separated origins allowed to call this API cross-origin, "
-            "e.g. when the UI is hosted separately (Vercel) from this "
-            "backend. '*' allows any origin; fine here since no cookies or "
-            "auth headers are used."
-        ),
-    )
+    MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
+    MAX_TOOL_HOPS: int = Field(default=3, ge=1)
 
-    MAX_HISTORY_TURNS: int = Field(
-        default=12,
-        ge=1,
-        description=(
-            "How many past user+assistant turns to keep per session " "before trimming."
-        ),
-    )
-    MAX_TOOL_HOPS: int = Field(
-        default=3,
-        ge=1,
-        description="Safety cap on tool-call round-trips per single user turn.",
-    )
+    SESSION_DB_PATH: str = "/data/sessions.db"
+    # 0 or less keeps transcripts until reset explicitly.
+    SESSION_TTL_MINUTES: int = 60
+    SESSION_SWEEP_MINUTES: int = Field(default=10, ge=1)
 
-    SESSION_DB_PATH: str = Field(
-        default="/data/sessions.db",
-        description=(
-            "SQLite file holding conversation checkpoints. "
-            "Mount a volume at its directory to keep them."
-        ),
-    )
-
-    SESSION_TTL_MINUTES: int = Field(
-        default=60,
-        description=(
-            "Clear a conversation after this many idle minutes. "
-            "0 or less keeps transcripts until reset explicitly."
-        ),
-    )
-    SESSION_SWEEP_MINUTES: int = Field(
-        default=10,
-        ge=1,
-        description="How often the background sweeper purges idle sessions.",
-    )
-
-    API_HOST: str = Field(
-        default="0.0.0.0",
-        description="Interface uvicorn binds for the chatbot API.",
-    )
-    API_PORT: int = Field(
-        default=8000,
-        description="Port uvicorn binds for the chatbot API.",
-    )
-
-    STATIC_DIR: str = Field(
-        default="static",
-        description="Directory served at /static, holding the test chat UI.",
-    )
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 8000
+    STATIC_DIR: str = "static"
 
 
 class McpSettings(BaseSettings):
@@ -138,73 +79,29 @@ class McpSettings(BaseSettings):
 
     model_config = _BASE_CONFIG
 
-    TOP_SIMILAR_API_URL: str = Field(
-        default="http://ec-faq-vector:8001/top_similar",
-        description=(
-            "POST endpoint returning top-k similar questions "
-            "with tag + cosine_similarity. Defaults to the self-hosted "
-            "pgvector service (src/vector); point elsewhere to use a "
-            "different backend."
-        ),
-    )
-    TOP_SIMILAR_TIMEOUT: float = Field(
-        default=10.0,
-        description="Timeout in seconds for calls to TOP_SIMILAR_API_URL.",
-    )
+    # Defaults to the self-hosted pgvector service (src/vector); point
+    # elsewhere to use a different top_similar backend.
+    TOP_SIMILAR_API_URL: str = "http://ec-conversational-vector:8001/top_similar"
+    TOP_SIMILAR_TIMEOUT: float = 10.0
 
-    TAG_ANSWER_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "development/full_dataset/tag_answer.json"
-        ),
-        description="Raw URL of the tag -> answer JSON, fetched at startup.",
+    TAG_ANSWER_URL: str = (
+        "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
+        "development/full_dataset/tag_answer.json"
     )
-    TAG_ANSWER_URL_TIMEOUT: float = Field(
-        default=15.0,
-        description="Timeout in seconds for the startup fetch of TAG_ANSWER_URL.",
-    )
-    GITHUB_TOKEN: str = Field(
-        default="",
-        description=(
-            "GitHub token for TAG_ANSWER_URL; required while the repo is private."
-        ),
-    )
-    TAG_ANSWER_PATH: str = Field(
-        default_factory=_default_tag_answer_path,
-        description="Local fallback copy of the tag -> Bengali answer JSON file.",
-    )
-    TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = Field(
-        default=True,
-        description=(
-            "If the live fetch fails, load TAG_ANSWER_PATH "
-            "instead of failing startup."
-        ),
-    )
-    TAG_ANSWER_REFRESH_SECONDS: float = Field(
-        default=0.0,
-        ge=0.0,
-        description=(
-            "Re-fetch TAG_ANSWER_URL on this interval so GitHub-side edits "
-            "reach a running server without a restart. 0 disables polling."
-        ),
-    )
-    CONFIDENCE_THRESHOLD: float = Field(
-        default=0.55,
-        ge=0.0,
-        le=1.0,
-        description="Minimum cosine_similarity for a match to be considered reliable.",
-    )
+    TAG_ANSWER_URL_TIMEOUT: float = 15.0
+    # Required while Synesis-IT-PLC/ec-faq-bot is private.
+    GITHUB_TOKEN: str = ""
+    TAG_ANSWER_PATH: str = Field(default_factory=_default_tag_answer_path)
+    TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = True
+    # 0 disables polling and only fetches once at startup.
+    TAG_ANSWER_REFRESH_SECONDS: float = Field(default=0.0, ge=0.0)
+    CONFIDENCE_THRESHOLD: float = Field(default=0.55, ge=0.0, le=1.0)
 
-    MCP_TRANSPORT: str = Field(
-        default="http",
-        description=(
-            "'http' (Streamable HTTP, for Docker/network use) "
-            "or 'stdio' (local MCP clients)."
-        ),
-    )
-    MCP_HOST: str = Field(default="0.0.0.0")
-    MCP_PORT: int = Field(default=9000)
-    MCP_PATH: str = Field(default="/mcp")
+    # 'http' (Streamable HTTP, for Docker/network use) or 'stdio' (local MCP clients).
+    MCP_TRANSPORT: str = "http"
+    MCP_HOST: str = "0.0.0.0"
+    MCP_PORT: int = 9000
+    MCP_PATH: str = "/mcp"
 
 
 class VectorSettings(BaseSettings):
@@ -212,96 +109,47 @@ class VectorSettings(BaseSettings):
 
     model_config = _BASE_CONFIG
 
-    DATABASE_URL: str = Field(
-        default="postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq",
-        description="Postgres connection string (psycopg format) for pgvector.",
+    DATABASE_URL: str = "postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq"
+    DB_POOL_MAX_SIZE: int = Field(default=5, ge=1)
+
+    # Must stay in sync with EMBEDDING_DIM and with whatever model produced
+    # the rows already stored in faq_entries -- scores are meaningless across
+    # models. Not in fastembed's built-in registry; registered as a custom
+    # model in src/vector/embeddings.py, which also applies the E5-instruct
+    # query prefix per RETRIEVAL_TASK below.
+    EMBEDDING_MODEL_NAME: str = "intfloat/multilingual-e5-large-instruct"
+    EMBEDDING_DIM: int = 1024
+    EMBEDDING_CACHE_DIR: str = "/root/.cache/fastembed_cache"
+    # Baked into the query instruction prefix ('Instruct: {task}\nQuery:
+    # {text}'), per the E5-instruct convention.
+    RETRIEVAL_TASK: str = (
+        "Given a question, retrieve the FAQ entry that best answers it"
     )
-    DB_POOL_MAX_SIZE: int = Field(
-        default=5,
-        ge=1,
-        description="Max connections in the Postgres connection pool.",
-    )
-    EMBEDDING_MODEL_NAME: str = Field(
-        default="intfloat/multilingual-e5-large-instruct",
-        description=(
-            "fastembed model name. Must stay in sync with EMBEDDING_DIM and "
-            "with whatever model produced the rows already stored in "
-            "faq_entries, since scores are meaningless across models. The "
-            "default isn't in fastembed's built-in registry and is "
-            "registered as a custom model in src/vector/embeddings.py."
-        ),
-    )
-    EMBEDDING_DIM: int = Field(
-        default=1024,
-        description="Vector width of EMBEDDING_MODEL_NAME's output.",
-    )
-    EMBEDDING_CACHE_DIR: str = Field(
-        default="/root/.cache/fastembed_cache",
-        description="Where fastembed caches downloaded model weights.",
-    )
-    RETRIEVAL_TASK: str = Field(
-        default="Given a question, retrieve the FAQ entry that best answers it",
-        description=(
-            "Task description baked into the query instruction prefix, per "
-            "the E5-instruct convention ('Instruct: {task}\\nQuery: "
-            "{text}') -- describes what a query is being matched against."
-        ),
-    )
-    INDEX_API_KEY: str = Field(
-        default="",
-        description=(
-            "If set, POST /index and POST /reindex require this value in "
-            "the X-API-Key header. Empty leaves them open (fine behind a "
-            "private network, not fine on the public internet)."
-        ),
-    )
-    VECTOR_API_HOST: str = Field(default="0.0.0.0")
-    VECTOR_API_PORT: int = Field(default=8001)
+
+    # Empty leaves POST /index and POST /reindex open -- fine behind a
+    # private network, not fine on the public internet.
+    INDEX_API_KEY: str = ""
+    VECTOR_API_HOST: str = "0.0.0.0"
+    VECTOR_API_PORT: int = 8001
 
     # -- Daily dataset refresh (src/vector/reindex.py) -----------------------
-    # Rebuilds faq_entries from the same GitHub source tag_answer.json/
-    # question_tag.csv come from, so an edit landed upstream reaches search
-    # without a manual /index upload.
-    TAG_ANSWER_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "development/full_dataset/tag_answer.json"
-        ),
-        description="Raw URL of the tag -> answer JSON.",
+    # Rebuilds faq_entries from these two files, so an edit landed upstream
+    # reaches search without a manual /index upload.
+    TAG_ANSWER_URL: str = (
+        "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
+        "development/full_dataset/tag_answer.json"
     )
-    QUESTION_TAG_CSV_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "development/full_dataset/question_tag.csv"
-        ),
-        description="Raw URL of the question,tag CSV (paraphrases per tag).",
+    QUESTION_TAG_CSV_URL: str = (
+        "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
+        "development/full_dataset/question_tag.csv"
     )
-    GITHUB_TOKEN: str = Field(
-        default="",
-        description=(
-            "GitHub token for TAG_ANSWER_URL/QUESTION_TAG_CSV_URL; required "
-            "while the repo is private."
-        ),
-    )
-    REINDEX_FETCH_TIMEOUT: float = Field(
-        default=30.0,
-        description="Timeout in seconds for each GitHub fetch during a reindex.",
-    )
-    REINDEX_ENABLED: bool = Field(
-        default=True,
-        description="Run the daily scheduled reindex. Manual POST /reindex works either way.",
-    )
-    REINDEX_HOUR_UTC: int = Field(
-        default=3,
-        ge=0,
-        le=23,
-        description=(
-            "UTC hour to run the daily reindex at (0-23), chosen once at "
-            "startup and re-picked after each run -- a fixed time rather "
-            "than 'every 24h from whenever the container booted', so a "
-            "restart at any hour doesn't shift it to a busier time of day."
-        ),
-    )
+    GITHUB_TOKEN: str = ""
+    REINDEX_FETCH_TIMEOUT: float = 30.0
+    # Manual POST /reindex works regardless of this.
+    REINDEX_ENABLED: bool = True
+    # A fixed UTC hour rather than "every 24h from whenever the container
+    # booted", so a restart at any hour doesn't shift it to a busier time.
+    REINDEX_HOUR_UTC: int = Field(default=3, ge=0, le=23)
 
 
 chatbot_settings = ChatbotSettings()
