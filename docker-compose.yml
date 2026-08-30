@@ -1,12 +1,55 @@
 services:
 
+  pgvector-db:
+    image: pgvector/pgvector:pg16
+    container_name: ec-faq-pgvector-db
+    environment:
+      POSTGRES_USER: ${VECTOR_DB_USER:-ec_faq}
+      POSTGRES_PASSWORD: ${VECTOR_DB_PASSWORD:-ec_faq}
+      POSTGRES_DB: ${VECTOR_DB_NAME:-ec_faq}
+    volumes:
+      - pgvector-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${VECTOR_DB_USER:-ec_faq} -d ${VECTOR_DB_NAME:-ec_faq}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ec-faq-vector:
+    build:
+      context: .
+      dockerfile: vector.Dockerfile
+    container_name: ec-faq-vector
+    environment:
+      DATABASE_URL: ${VECTOR_DATABASE_URL:-postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq}
+      EMBEDDING_MODEL: ${VECTOR_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-384}
+      EMBEDDING_CACHE_DIR: /root/.cache/fastembed_cache
+      INDEX_API_KEY: ${VECTOR_INDEX_API_KEY:-}
+      VECTOR_API_HOST: 0.0.0.0
+      VECTOR_API_PORT: 8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - vector-model-cache:/root/.cache/fastembed_cache
+    depends_on:
+      pgvector-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8001/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
   ec-faq-mcp:
     build:
       context: .
       dockerfile: mcp.Dockerfile
     container_name: ec-faq-mcp
     environment:
-      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
+      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://ec-faq-vector:8001/top_similar}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
@@ -20,6 +63,9 @@ services:
       MCP_PATH: /mcp
     volumes:
       - ./data:/data
+    depends_on:
+      ec-faq-vector:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-fsS", "-X", "POST", "http://localhost:9000/mcp", "-H", "Content-Type: application/json", "-H", "Accept: application/json, text/event-stream", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1\"}}}" ]
@@ -87,3 +133,5 @@ services:
 
 volumes:
   chat-sessions:
+  pgvector-data:
+  vector-model-cache:

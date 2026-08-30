@@ -134,10 +134,12 @@ class McpSettings(BaseSettings):
     model_config = _BASE_CONFIG
 
     top_similar_api_url: str = Field(
-        default="http://172.31.60.228:8002/ec_bot/top_similar/",
+        default="http://ec-faq-vector:8001/top_similar",
         description=(
             "POST endpoint returning top-k similar questions "
-            "with tag + cosine_similarity."
+            "with tag + cosine_similarity. Defaults to the self-hosted "
+            "pgvector service (src/vector); point elsewhere to use a "
+            "different backend."
         ),
     )
     top_similar_timeout: float = Field(
@@ -200,5 +202,48 @@ class McpSettings(BaseSettings):
     mcp_path: str = Field(default="/mcp")
 
 
+class VectorSettings(BaseSettings):
+    """Settings for the pgvector-backed search service (src/vector)."""
+
+    model_config = _BASE_CONFIG
+
+    database_url: str = Field(
+        default="postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq",
+        description="Postgres connection string (psycopg format) for pgvector.",
+    )
+    db_pool_max_size: int = Field(
+        default=5,
+        ge=1,
+        description="Max connections in the Postgres connection pool.",
+    )
+    embedding_model: str = Field(
+        default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        description=(
+            "fastembed model name. Must stay in sync with embedding_dim and "
+            "with whatever model produced the rows already stored in "
+            "faq_entries, since scores are meaningless across models."
+        ),
+    )
+    embedding_dim: int = Field(
+        default=384,
+        description="Vector width of embedding_model's output.",
+    )
+    embedding_cache_dir: str = Field(
+        default="/root/.cache/fastembed_cache",
+        description="Where fastembed caches downloaded model weights.",
+    )
+    index_api_key: str = Field(
+        default="",
+        description=(
+            "If set, POST /index requires this value in the X-API-Key "
+            "header. Empty leaves the endpoint open (fine behind a private "
+            "network, not fine on the public internet)."
+        ),
+    )
+    vector_api_host: str = Field(default="0.0.0.0")
+    vector_api_port: int = Field(default=8001)
+
+
 chatbot_settings = ChatbotSettings()
 mcp_settings = McpSettings()
+vector_settings = VectorSettings()

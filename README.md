@@ -23,13 +23,18 @@ llama-server you already have running.
 - **A `GITHUB_TOKEN`** — a PAT with read access to the private knowledge-base
   repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
   token logs `fetched 1374 tags` on boot.
-- **The `top_similar` embedding API**, returning `input_question` and
-  `top_similar[].{tag, cosine_similarity}`.
+
+Embedding search (`top_similar`) is self-hosted: `pgvector-db` (Postgres +
+pgvector) and `ec-faq-vector` (FastAPI, local embeddings via
+[fastembed](https://github.com/qdrant/fastembed) — no third-party API, no
+outbound calls per request) both come up with `docker compose up`. The
+knowledge base starts empty — see [Indexing the knowledge
+base](#indexing-the-knowledge-base) to load it.
 
 **Run**
 
 ```bash
-cp .env.example .env      # set LLAMA_BASE_URL, TOP_SIMILAR_API_URL, GITHUB_TOKEN
+cp .env.example .env      # set LLAMA_BASE_URL, GITHUB_TOKEN
 docker compose up --build
 ```
 
@@ -52,7 +57,8 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
 | **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
-| **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
+| **`ec-faq-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
+| **`pgvector-db`** | `:5432` internal | Postgres + [pgvector](https://github.com/pgvector/pgvector), one `faq_entries` table (tag, question, answer, embedding) |
 
 ```mermaid
 flowchart LR
@@ -60,7 +66,8 @@ flowchart LR
     CADDY --> BOT["ec-faq-chatbot<br/>tool-calling loop"]
     BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
     BOT -->|"model asked for search_faq"| MCP["ec-faq-mcp"]
-    MCP --> SIM["top_similar API"]
+    MCP --> SIM["ec-faq-vector<br/>/top_similar"]
+    SIM --> PG[("pgvector-db<br/>faq_entries")]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
@@ -116,6 +123,36 @@ python scripts/load_test.py --url http://172.31.60.228:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
+### Indexing the knowledge base
+
+`ec-faq-vector` starts with an empty `faq_entries` table. Load it with a JSON
+upload to `POST /index` (internal-only; from the host, exec into a container
+on the compose network or temporarily publish the port):
+
+```bash
+curl -X POST http://ec-faq-vector:8001/index \
+  -H "Content-Type: application/json" \
+  ${VECTOR_INDEX_API_KEY:+-H "X-API-Key: $VECTOR_INDEX_API_KEY"} \
+  -d '{
+    "mode": "replace",
+    "entries": [
+      {"tag": "accepted_nid_types", "question": "কি ধরনের এনআইডি গ্রহণযোগ্য?", "answer": "সকল ধরনের জাতীয় পরিচয়পত্র গ্রহণযোগ্য..."}
+    ]
+  }'
+```
+
+- `mode: "replace"` truncates `faq_entries` first, so the upload becomes the
+  entire knowledge base — use this for a full reload.
+- `mode: "append"` (default) upserts by `(tag, question)`, for incremental
+  additions.
+- Each entry is embedded locally (fastembed) and stored with its vector; no
+  outbound calls are made per request.
+- Set `VECTOR_INDEX_API_KEY` to require an `X-API-Key` header on `/index`
+  before exposing this service beyond the compose network.
+
+`GET /health` on `ec-faq-vector` reports `row_count` and the active
+`embedding_model`.
+
 ### Retrieval parameters
 
 The UI sends a `params` object per request. `top_k` is forwarded to
@@ -143,7 +180,9 @@ actually touch:
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
-| `TOP_SIMILAR_API_URL` | `…:8002/ec_bot/top_similar/` | Embedding search API |
+| `TOP_SIMILAR_API_URL` | `http://ec-faq-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
+| `VECTOR_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
+| `VECTOR_INDEX_API_KEY` | *(unset)* | Required `X-API-Key` on `POST /index` once set |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
@@ -159,7 +198,7 @@ actually touch:
 ## Repo layout
 
 ```
-├── main.py               # `python main.py api` | `python main.py mcp`
+├── main.py               # `python main.py api` | `mcp` | `vector`
 ├── Caddyfile             # /asr* → ASR service, rest → chatbot
 ├── vercel.json           # build step for hosting static/index.html
 ├── scripts/              # load_test.py, point-alias.sh
@@ -175,7 +214,8 @@ actually touch:
     │   ├── client.py     # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py     # system prompt and canned replies (Bengali)
     │   └── tools.py      # tool catalogue, dispatch, result summary
-    └── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    ├── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    └── vector/           # app.py (/top_similar, /index), db.py, embeddings.py
 ```
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
