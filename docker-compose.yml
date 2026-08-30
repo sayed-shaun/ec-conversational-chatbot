@@ -23,8 +23,8 @@ services:
     container_name: ec-faq-vector
     environment:
       DATABASE_URL: ${VECTOR_DATABASE_URL:-postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq}
-      EMBEDDING_MODEL: ${VECTOR_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-384}
+      EMBEDDING_MODEL_NAME: ${VECTOR_EMBEDDING_MODEL_NAME:-intfloat/multilingual-e5-large-instruct}
+      EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-1024}
       EMBEDDING_CACHE_DIR: /root/.cache/fastembed_cache
       INDEX_API_KEY: ${VECTOR_INDEX_API_KEY:-}
       VECTOR_API_HOST: 0.0.0.0

@@ -151,7 +151,7 @@ curl -X POST http://ec-faq-vector:8001/index \
   before exposing this service beyond the compose network.
 
 `GET /health` on `ec-faq-vector` reports `row_count` and the active
-`embedding_model`.
+`embedding_model_name`.
 
 ### Retrieval parameters
 
@@ -181,7 +181,7 @@ actually touch:
 |---|---|---|
 | `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
 | `TOP_SIMILAR_API_URL` | `http://ec-faq-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
-| `VECTOR_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
+| `VECTOR_EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
 | `VECTOR_INDEX_API_KEY` | *(unset)* | Required `X-API-Key` on `POST /index` once set |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |

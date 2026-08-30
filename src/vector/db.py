@@ -21,7 +21,7 @@ def _bootstrap_extension() -> None:
     which requires CREATE EXTENSION to have already run -- otherwise pool
     init deadlocks retrying "vector type not found".
     """
-    with psycopg.connect(settings.database_url, autocommit=True) as conn:
+    with psycopg.connect(settings.DATABASE_URL, autocommit=True) as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
 
@@ -29,9 +29,9 @@ def _bootstrap_extension() -> None:
 def _pool() -> ConnectionPool:
     _bootstrap_extension()
     pool = ConnectionPool(
-        settings.database_url,
+        settings.DATABASE_URL,
         min_size=1,
-        max_size=settings.db_pool_max_size,
+        max_size=settings.DB_POOL_MAX_SIZE,
         open=True,
         configure=register_vector,
     )
@@ -52,7 +52,7 @@ def ensure_schema() -> None:
                 tag TEXT NOT NULL,
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
-                embedding vector({int(settings.embedding_dim)}) NOT NULL,
+                embedding vector({int(settings.EMBEDDING_DIM)}) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 UNIQUE (tag, question)
             )

@@ -44,7 +44,7 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI):
     db.ensure_schema()
     logger.info(
-        "vector service ready model=%s rows=%d", settings.embedding_model, db.row_count()
+        "vector service ready model=%s rows=%d", settings.EMBEDDING_MODEL_NAME, db.row_count()
     )
     yield
 
@@ -55,7 +55,7 @@ app = FastAPI(title="EC FAQ Vector Search", lifespan=lifespan)
 def require_index_api_key(
     x_api_key: str = Header(default=""),
 ) -> None:
-    if settings.index_api_key and x_api_key != settings.index_api_key:
+    if settings.INDEX_API_KEY and x_api_key != settings.INDEX_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing X-API-Key"
         )
@@ -86,5 +86,5 @@ def index(payload: IndexRequest) -> IndexResponse:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(
-        status="ok", row_count=db.row_count(), embedding_model=settings.embedding_model
+        status="ok", row_count=db.row_count(), embedding_model=settings.EMBEDDING_MODEL_NAME
     )

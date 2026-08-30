@@ -63,7 +63,7 @@ def search_faq(
         question: The user's raw question, in Bengali or English.
         top_k: How many nearest-neighbour candidates to retrieve (default 10).
         min_score: Minimum cosine similarity for the best match to count as
-            reliable. Overrides settings.confidence_threshold for this call.
+            reliable. Overrides settings.CONFIDENCE_THRESHOLD for this call.
         min_score_ratio: Required margin between the best and second-best
             match: the best must score at least `second_best * ratio` to be
             treated as confident. 1.0 (the default) demands no margin.
@@ -84,9 +84,9 @@ def search_faq(
     """
     try:
         response = requests.post(
-            settings.top_similar_api_url,
+            settings.TOP_SIMILAR_API_URL,
             json={"question": question, "top_k": top_k},
-            timeout=settings.top_similar_timeout,
+            timeout=settings.TOP_SIMILAR_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()
@@ -124,7 +124,7 @@ def search_faq(
     best = enriched[0]
     best_score = best.get("cosine_similarity") or 0.0
 
-    threshold = settings.confidence_threshold if min_score is None else min_score
+    threshold = settings.CONFIDENCE_THRESHOLD if min_score is None else min_score
 
     runner_up = 0.0
     if len(enriched) > 1:
@@ -160,22 +160,22 @@ def health() -> dict:
 def main() -> None:
     """Run the MCP server over the transport selected by MCP_TRANSPORT."""
     start_refresh_thread()
-    if settings.mcp_transport == "stdio":
+    if settings.MCP_TRANSPORT == "stdio":
         logger.info("starting MCP server on stdio tags=%d", len(TAG_ANSWERS))
         mcp.run(transport="stdio")
     else:
         logger.info(
             "starting MCP server http://%s:%s%s tags=%d",
-            settings.mcp_host,
-            settings.mcp_port,
-            settings.mcp_path,
+            settings.MCP_HOST,
+            settings.MCP_PORT,
+            settings.MCP_PATH,
             len(TAG_ANSWERS),
         )
         mcp.run(
             transport="http",
-            host=settings.mcp_host,
-            port=settings.mcp_port,
-            path=settings.mcp_path,
+            host=settings.MCP_HOST,
+            port=settings.MCP_PORT,
+            path=settings.MCP_PATH,
         )
 
 

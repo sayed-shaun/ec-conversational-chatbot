@@ -57,7 +57,7 @@ class Chat:
         user message.
         """
         system_msg, rest = self.history[0], self.history[1:]
-        max_messages = settings.max_history_turns * 2
+        max_messages = settings.MAX_HISTORY_TURNS * 2
         if len(rest) <= max_messages:
             return
 
@@ -77,7 +77,7 @@ class Chat:
         self.history.append({"role": "user", "content": message})
 
         reply_text = ""
-        for hop in range(settings.max_tool_hops):
+        for hop in range(settings.MAX_TOOL_HOPS):
             try:
                 msg = openai_client.chat_completion(self.history, tools=TOOLS)
             except Exception:
@@ -122,7 +122,7 @@ class Chat:
         else:
             logger.warning(
                 "hit max_tool_hops=%d without a final reply session=%s",
-                settings.max_tool_hops,
+                settings.MAX_TOOL_HOPS,
                 self.session_id,
             )
             reply_text = FALLBACK_REPLY
@@ -149,7 +149,7 @@ class Chat:
         self.history.append({"role": "user", "content": message})
 
         reply_text = ""
-        for hop in range(settings.max_tool_hops):
+        for hop in range(settings.MAX_TOOL_HOPS):
             content_parts: List[str] = []
             pending: Dict[int, dict] = {}
             streamed_any_token = False
@@ -253,7 +253,7 @@ class Chat:
         else:
             logger.warning(
                 "hit max_tool_hops=%d without a final reply session=%s (stream)",
-                settings.max_tool_hops,
+                settings.MAX_TOOL_HOPS,
                 self.session_id,
             )
             reply_text = FALLBACK_REPLY

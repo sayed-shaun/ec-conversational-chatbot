@@ -28,12 +28,12 @@ def run_api() -> None:
     from src.core.config import chatbot_settings as settings
 
     logger.info(
-        "starting chatbot API on http://%s:%s", settings.api_host, settings.api_port
+        "starting chatbot API on http://%s:%s", settings.API_HOST, settings.API_PORT
     )
     uvicorn.run(
         "src.api.app:app",
-        host=settings.api_host,
-        port=settings.api_port,
+        host=settings.API_HOST,
+        port=settings.API_PORT,
     )
 
 
@@ -52,13 +52,13 @@ def run_vector() -> None:
 
     logger.info(
         "starting vector search API on http://%s:%s",
-        settings.vector_api_host,
-        settings.vector_api_port,
+        settings.VECTOR_API_HOST,
+        settings.VECTOR_API_PORT,
     )
     uvicorn.run(
         "src.vector.app:app",
-        host=settings.vector_api_host,
-        port=settings.vector_api_port,
+        host=settings.VECTOR_API_HOST,
+        port=settings.VECTOR_API_PORT,
     )
 
 
