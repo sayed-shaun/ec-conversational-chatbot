@@ -40,7 +40,7 @@ docker compose up --build
 
 | | URL |
 |---|---|
-| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 8000) |
+| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 9100) |
 | API docs | `http://localhost:${PORT}/docs` |
 | Health | `http://localhost:${PORT}/health` |
 | MCP server | internal only — `ec-conversational-mcp:9000/mcp` |

@@ -120,7 +120,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "${PORT:-8000}:80"
+      - "${PORT:-9100}:80"
     depends_on:
       ec-conversational-chatbot:
         condition: service_healthy
