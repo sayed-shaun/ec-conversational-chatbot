@@ -43,29 +43,31 @@ def _default_tag_answer_path() -> str:
 
 
 class ChatbotSettings(BaseSettings):
-    """Settings for the FastAPI chatbot backend (src/chatbot)."""
+    """Settings for the FastAPI chatbot backend (src/chatbot).
+
+    LLAMA_MODEL is sent but usually ignored by llama-server; the OpenAI
+    client just requires a value. LLAMA_REASONING_EFFORT='none' suppresses
+    most of the thinking pass on a reasoning model (the bulk of the delay
+    before the first answer token); it's unreliable through the streaming
+    path, so prefer llama-server's own --reasoning off instead.
+    SESSION_TTL_MINUTES=0 (or less) keeps transcripts until reset
+    explicitly.
+    """
 
     model_config = _BASE_CONFIG
 
     LLAMA_BASE_URL: str = "http://172.31.60.228:8080/v1"
-    # llama-server usually ignores this field, but the OpenAI client requires one.
     LLAMA_MODEL: str = "local-model"
-    # 'none' suppresses most of the thinking pass -- the bulk of the delay
-    # between a tool result and the first answer token on a reasoning model.
-    # Empty leaves the model's default. Unreliable through the streaming path;
-    # prefer llama-server's own --reasoning off.
     LLAMA_REASONING_EFFORT: str = ""
 
     MCP_SERVER_URL: str = "http://ec-conversational-mcp:9000/mcp"
 
-    # '*' is fine here since no cookies/auth headers are used cross-origin.
     CORS_ALLOW_ORIGINS: str = "*"
 
     MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
     MAX_TOOL_HOPS: int = Field(default=3, ge=1)
 
     SESSION_DB_PATH: str = "/data/sessions.db"
-    # 0 or less keeps transcripts until reset explicitly.
     SESSION_TTL_MINUTES: int = 60
     SESSION_SWEEP_MINUTES: int = Field(default=10, ge=1)
 
@@ -75,12 +77,18 @@ class ChatbotSettings(BaseSettings):
 
 
 class McpSettings(BaseSettings):
-    """Settings for the FastMCP server (src/mcp)."""
+    """Settings for the FastMCP server (src/mcp).
+
+    TOP_SIMILAR_API_URL defaults to the self-hosted pgvector service
+    (src/vector); point it elsewhere to use a different backend.
+    GITHUB_TOKEN is required while Synesis-IT-PLC/ec-faq-bot is private.
+    TAG_ANSWER_REFRESH_SECONDS=0 disables polling and only fetches once at
+    startup. MCP_TRANSPORT is 'http' (Streamable HTTP, for Docker/network
+    use) or 'stdio' (local MCP clients).
+    """
 
     model_config = _BASE_CONFIG
 
-    # Defaults to the self-hosted pgvector service (src/vector); point
-    # elsewhere to use a different top_similar backend.
     TOP_SIMILAR_API_URL: str = "http://ec-conversational-vector:8001/top_similar"
     TOP_SIMILAR_TIMEOUT: float = 10.0
 
@@ -89,15 +97,12 @@ class McpSettings(BaseSettings):
         "development/full_dataset/tag_answer.json"
     )
     TAG_ANSWER_URL_TIMEOUT: float = 15.0
-    # Required while Synesis-IT-PLC/ec-faq-bot is private.
     GITHUB_TOKEN: str = ""
     TAG_ANSWER_PATH: str = Field(default_factory=_default_tag_answer_path)
     TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = True
-    # 0 disables polling and only fetches once at startup.
     TAG_ANSWER_REFRESH_SECONDS: float = Field(default=0.0, ge=0.0)
     CONFIDENCE_THRESHOLD: float = Field(default=0.55, ge=0.0, le=1.0)
 
-    # 'http' (Streamable HTTP, for Docker/network use) or 'stdio' (local MCP clients).
     MCP_TRANSPORT: str = "http"
     MCP_HOST: str = "0.0.0.0"
     MCP_PORT: int = 9000
@@ -105,23 +110,32 @@ class McpSettings(BaseSettings):
 
 
 class VectorSettings(BaseSettings):
-    """Settings for the pgvector-backed search service (src/vector)."""
+    """Settings for the pgvector-backed search service (src/vector).
+
+    EMBEDDING_MODEL_NAME must stay in sync with EMBEDDING_DIM and with
+    whatever model produced the rows already stored in faq_entries -- scores
+    are meaningless across models. It isn't in fastembed's built-in
+    registry; it's registered as a custom model in src/vector/embeddings.py,
+    which also applies the E5-instruct query prefix built from
+    RETRIEVAL_TASK.
+
+    TAG_ANSWER_URL and QUESTION_TAG_CSV_URL feed the daily reindex
+    (src/vector/reindex.py), which rebuilds faq_entries from them so an
+    edit landed upstream reaches search without a manual /index upload.
+    REINDEX_ENABLED only controls the daily schedule -- manual POST
+    /reindex works regardless. REINDEX_HOUR_UTC is a fixed UTC hour rather
+    than "every 24h from whenever the container booted", so a restart at
+    any hour doesn't shift it to a busier time of day.
+    """
 
     model_config = _BASE_CONFIG
 
     DATABASE_URL: str = "postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq"
     DB_POOL_MAX_SIZE: int = Field(default=5, ge=1)
 
-    # Must stay in sync with EMBEDDING_DIM and with whatever model produced
-    # the rows already stored in faq_entries -- scores are meaningless across
-    # models. Not in fastembed's built-in registry; registered as a custom
-    # model in src/vector/embeddings.py, which also applies the E5-instruct
-    # query prefix per RETRIEVAL_TASK below.
     EMBEDDING_MODEL_NAME: str = "intfloat/multilingual-e5-large-instruct"
     EMBEDDING_DIM: int = 1024
     EMBEDDING_CACHE_DIR: str = "/root/.cache/fastembed_cache"
-    # Baked into the query instruction prefix ('Instruct: {task}\nQuery:
-    # {text}'), per the E5-instruct convention.
     RETRIEVAL_TASK: str = (
         "Given a question, retrieve the FAQ entry that best answers it"
     )
@@ -129,9 +143,6 @@ class VectorSettings(BaseSettings):
     VECTOR_API_HOST: str = "0.0.0.0"
     VECTOR_API_PORT: int = 8001
 
-    # -- Daily dataset refresh (src/vector/reindex.py) -----------------------
-    # Rebuilds faq_entries from these two files, so an edit landed upstream
-    # reaches search without a manual /index upload.
     TAG_ANSWER_URL: str = (
         "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
         "development/full_dataset/tag_answer.json"
@@ -142,10 +153,7 @@ class VectorSettings(BaseSettings):
     )
     GITHUB_TOKEN: str = ""
     REINDEX_FETCH_TIMEOUT: float = 30.0
-    # Manual POST /reindex works regardless of this.
     REINDEX_ENABLED: bool = True
-    # A fixed UTC hour rather than "every 24h from whenever the container
-    # booted", so a restart at any hour doesn't shift it to a busier time.
     REINDEX_HOUR_UTC: int = Field(default=3, ge=0, le=23)
 
 

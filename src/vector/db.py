@@ -17,10 +17,9 @@ from src.vector.model import Base, VectorDatabase
 
 
 def _sqlalchemy_url() -> str:
-    # DATABASE_URL is a plain "postgresql://" connection string (also used
-    # as-is by _bootstrap_extension's raw psycopg connection below);
-    # SQLAlchemy needs the driver named explicitly to pick psycopg3 over
-    # the (not installed) psycopg2 default.
+    """Rewrite DATABASE_URL's plain 'postgresql://' scheme to
+    'postgresql+psycopg://', the driver SQLAlchemy needs named explicitly
+    to pick psycopg3 over the (not installed) psycopg2 default."""
     url = settings.DATABASE_URL
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg://", 1)

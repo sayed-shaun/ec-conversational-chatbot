@@ -31,9 +31,6 @@ logger = get_logger(__name__)
 
 _scheduler = BackgroundScheduler(timezone="UTC")
 
-# Guards against the daily schedule and a manual POST /reindex overlapping --
-# reindex_once() silently no-ops if one is already running rather than
-# racing two TRUNCATE + rebuild passes against each other.
 _lock = threading.Lock()
 
 
@@ -48,12 +45,13 @@ def _fetch(url: str) -> str:
 
 def _build_entries() -> list[tuple[str, str, str]]:
     """Join tag_answer.json + question_tag.csv into (tag, question, answer)
-    rows, one per question paraphrase whose tag has a known answer."""
-    tag_answer = json.loads(_fetch(settings.TAG_ANSWER_URL))
+    rows, one per question paraphrase whose tag has a known answer.
 
-    # The source file has a leading UTF-8 BOM; left in, it glues onto the
-    # first header cell ("﻿question") and silently breaks every
-    # row.get("question") lookup below.
+    The CSV's leading UTF-8 BOM is stripped before parsing -- left in, it
+    glues onto the first header cell ("﻿question") and silently breaks
+    every row.get("question") lookup below.
+    """
+    tag_answer = json.loads(_fetch(settings.TAG_ANSWER_URL))
     csv_text = _fetch(settings.QUESTION_TAG_CSV_URL).lstrip("﻿")
     reader = csv.DictReader(io.StringIO(csv_text))
 
@@ -133,15 +131,18 @@ def _scheduled_reindex() -> None:
 
 
 def start_scheduler() -> None:
-    """Start the daily reindex job, if configured to."""
+    """Start the daily reindex job, if configured to.
+
+    misfire_grace_time=None plus coalesce=True means a missed run (e.g. the
+    process was down at 03:00) fires once on the next startup instead of
+    stacking up backlogged runs.
+    """
     if not settings.REINDEX_ENABLED:
         return
     _scheduler.add_job(
         _scheduled_reindex,
         trigger=CronTrigger(hour=settings.REINDEX_HOUR_UTC, minute=0),
         id="daily_reindex",
-        # A missed run (e.g. the process was down at 03:00) fires once on
-        # the next startup instead of stacking up backlogged runs.
         misfire_grace_time=None,
         coalesce=True,
         max_instances=1,

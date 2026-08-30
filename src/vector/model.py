@@ -18,6 +18,10 @@ class Base(DeclarativeBase):
 
 
 class VectorDatabase(Base):
+    """One row per question paraphrase: its tag, canonical answer, and
+    embedding. embedding's width is read from EMBEDDING_DIM rather than
+    hardcoded, so it always matches EMBEDDING_MODEL_NAME's actual output."""
+
     __tablename__ = "faq_entries"
     __table_args__ = (UniqueConstraint("tag", "question"),)
 
@@ -25,8 +29,6 @@ class VectorDatabase(Base):
     tag: Mapped[str] = mapped_column(Text, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
-    # Dimension is read from settings rather than hardcoded so it always
-    # matches EMBEDDING_MODEL_NAME's actual output width.
     embedding: Mapped[list[float]] = mapped_column(
         Vector(settings.EMBEDDING_DIM), nullable=False
     )
