@@ -136,6 +136,10 @@ services:
       - caddy
     restart: on-failure:3
 
+networks:
+  default:
+    name: ec-conversational-net
+
 volumes:
   chat-sessions:
   pgvector-data:
