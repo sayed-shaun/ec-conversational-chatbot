@@ -126,13 +126,13 @@ python scripts/load_test.py --url http://172.31.60.228:9100 \
 ### Indexing the knowledge base
 
 `ec-conversational-vector` starts with an empty `faq_entries` table. Load it with a JSON
-upload to `POST /index` (internal-only; from the host, exec into a container
-on the compose network or temporarily publish the port):
+upload to `POST /index` — reachable from other containers on the compose
+network, or from the host at `http://localhost:8001/index` (published to
+`127.0.0.1` for the Swagger UI, see below):
 
 ```bash
-curl -X POST http://ec-conversational-vector:8001/index \
+curl -X POST http://localhost:8001/index \
   -H "Content-Type: application/json" \
-  ${VECTOR_INDEX_API_KEY:+-H "X-API-Key: $VECTOR_INDEX_API_KEY"} \
   -d '{
     "mode": "replace",
     "entries": [
@@ -147,8 +147,9 @@ curl -X POST http://ec-conversational-vector:8001/index \
   additions.
 - Each entry is embedded locally (fastembed) and stored with its vector; no
   outbound calls are made per request.
-- Set `VECTOR_INDEX_API_KEY` to require an `X-API-Key` header on `/index`
-  before exposing this service beyond the compose network.
+- No auth on `/index`/`/reindex` — this service isn't internet-facing (its
+  host port is bound to `127.0.0.1` only), so there's no third party to
+  gate out.
 
 `GET /health` on `ec-conversational-vector` reports `row_count` and the active
 `embedding_model_name`.
@@ -166,9 +167,9 @@ the upstream dataset reaches search without a manual `/index` upload:
 - Runs once a day at `VECTOR_REINDEX_HOUR_UTC` (default `3`, i.e. 03:00 UTC)
   via [APScheduler](https://apscheduler.readthedocs.io/); set
   `VECTOR_REINDEX_ENABLED=false` to turn off the schedule entirely.
-- `POST /reindex` triggers the same job on demand (same `X-API-Key` gate as
-  `/index`); a reindex already in progress makes a second call a no-op
-  (`{"status": "already_running"}`) rather than running two in parallel.
+- `POST /reindex` triggers the same job on demand; a reindex already in
+  progress makes a second call a no-op (`{"status": "already_running"}`)
+  rather than running two in parallel.
 - A full reindex re-embeds every row from scratch, so it costs roughly what
   the initial load did — with the default model that's tens of minutes for
   the current dataset size, not seconds. `GET /health`'s `row_count` only
@@ -203,7 +204,6 @@ actually touch:
 | `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
 | `TOP_SIMILAR_API_URL` | `http://ec-conversational-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
 | `VECTOR_EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
-| `VECTOR_INDEX_API_KEY` | *(unset)* | Required `X-API-Key` on `POST /index` and `POST /reindex` once set |
 | `VECTOR_REINDEX_ENABLED` | `true` | Daily automatic reindex from GitHub; `POST /reindex` still works if `false` |
 | `VECTOR_REINDEX_HOUR_UTC` | `3` | UTC hour the daily reindex runs at |
 | `QUESTION_TAG_CSV_URL` | `…/full_dataset/question_tag.csv` | Question/tag paraphrase source for the daily reindex |

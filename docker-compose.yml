@@ -26,7 +26,6 @@ services:
       EMBEDDING_MODEL_NAME: ${VECTOR_EMBEDDING_MODEL_NAME:-intfloat/multilingual-e5-large-instruct}
       EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-1024}
       EMBEDDING_CACHE_DIR: /root/.cache/fastembed_cache
-      INDEX_API_KEY: ${VECTOR_INDEX_API_KEY:-}
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
       QUESTION_TAG_CSV_URL: ${QUESTION_TAG_CSV_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/question_tag.csv}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
@@ -38,8 +37,8 @@ services:
     volumes:
       - vector-model-cache:/root/.cache/fastembed_cache
     ports:
-      # Localhost-only: /index and /reindex have no auth by default
-      # (VECTOR_INDEX_API_KEY unset), so this isn't published to 0.0.0.0.
+      # Localhost-only, for the Swagger UI at /docs -- /index and /reindex
+      # have no auth, so this doesn't publish to 0.0.0.0.
       - "127.0.0.1:8001:8001"
     depends_on:
       pgvector-db:

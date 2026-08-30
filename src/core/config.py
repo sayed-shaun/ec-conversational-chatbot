@@ -126,9 +126,6 @@ class VectorSettings(BaseSettings):
         "Given a question, retrieve the FAQ entry that best answers it"
     )
 
-    # Empty leaves POST /index and POST /reindex open -- fine behind a
-    # private network, not fine on the public internet.
-    INDEX_API_KEY: str = ""
     VECTOR_API_HOST: str = "0.0.0.0"
     VECTOR_API_PORT: int = 8001
 

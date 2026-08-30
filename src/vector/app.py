@@ -16,20 +16,21 @@ Two endpoints:
   POST /index          Upload the knowledge base (or an incremental batch)
                        as JSON: a list of {tag, question, answer} entries.
                        Each is embedded and stored/upserted in Postgres.
-                       Optionally protected by VECTOR_INDEX_API_KEY.
 
   POST /reindex        Re-fetch tag_answer.json + question_tag.csv from
                        GitHub and replace the whole index. Runs
                        automatically every day at REINDEX_HOUR_UTC
                        (src/vector/reindex.py); this triggers it on demand.
-                       Same X-API-Key gate as /index.
 
-All configuration lives in src/core/config.py (VectorSettings).
+All configuration lives in src/core/config.py (VectorSettings). Not
+internet-facing -- reachable only from other containers on the compose
+network (plus localhost, since ec-conversational-vector's port is published
+to 127.0.0.1 for the Swagger UI at /docs).
 """
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import FastAPI
 
 from src.core.config import vector_settings as settings
 from src.core.logger import get_logger
@@ -62,16 +63,6 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="EC FAQ Vector Search", lifespan=lifespan)
 
 
-def require_index_api_key(
-    x_api_key: str = Header(default=""),
-) -> None:
-    if settings.INDEX_API_KEY and x_api_key != settings.INDEX_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or missing X-API-Key",
-        )
-
-
 @app.post("/top_similar", response_model=TopSimilarResponse)
 def top_similar(payload: TopSimilarRequest) -> TopSimilarResponse:
     query_vector = embed_query(payload.question)
@@ -79,11 +70,7 @@ def top_similar(payload: TopSimilarRequest) -> TopSimilarResponse:
     return TopSimilarResponse(input_question=payload.question, top_similar=matches)
 
 
-@app.post(
-    "/index",
-    response_model=IndexResponse,
-    dependencies=[Depends(require_index_api_key)],
-)
+@app.post("/index", response_model=IndexResponse)
 def index(payload: IndexRequest) -> IndexResponse:
     vectors = embed_passages([entry.question for entry in payload.entries])
     rows = [
@@ -94,11 +81,7 @@ def index(payload: IndexRequest) -> IndexResponse:
     return IndexResponse(indexed=written, mode=payload.mode, total_rows=db.row_count())
 
 
-@app.post(
-    "/reindex",
-    response_model=ReindexResponse,
-    dependencies=[Depends(require_index_api_key)],
-)
+@app.post("/reindex", response_model=ReindexResponse)
 def trigger_reindex() -> ReindexResponse:
     started = reindex.trigger_background()
     return ReindexResponse(
