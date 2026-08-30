@@ -18,6 +18,12 @@ Two endpoints:
                        Each is embedded and stored/upserted in Postgres.
                        Optionally protected by VECTOR_INDEX_API_KEY.
 
+  POST /reindex        Re-fetch tag_answer.json + question_tag.csv from
+                       GitHub and replace the whole index. Runs
+                       automatically every day at REINDEX_HOUR_UTC
+                       (src/vector/reindex.py); this triggers it on demand.
+                       Same X-API-Key gate as /index.
+
 All configuration lives in src/core/config.py (VectorSettings).
 """
 
@@ -27,12 +33,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from src.core.config import vector_settings as settings
 from src.core.logger import get_logger
-from src.vector import db
+from src.vector import db, reindex
 from src.vector.embeddings import embed_passages, embed_query
 from src.vector.schemas import (
     HealthResponse,
     IndexRequest,
     IndexResponse,
+    ReindexResponse,
     TopSimilarRequest,
     TopSimilarResponse,
 )
@@ -43,8 +50,11 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.ensure_schema()
+    reindex.start_scheduler()
     logger.info(
-        "vector service ready model=%s rows=%d", settings.EMBEDDING_MODEL_NAME, db.row_count()
+        "vector service ready model=%s rows=%d",
+        settings.EMBEDDING_MODEL_NAME,
+        db.row_count(),
     )
     yield
 
@@ -57,7 +67,8 @@ def require_index_api_key(
 ) -> None:
     if settings.INDEX_API_KEY and x_api_key != settings.INDEX_API_KEY:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing X-API-Key"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing X-API-Key",
         )
 
 
@@ -83,8 +94,22 @@ def index(payload: IndexRequest) -> IndexResponse:
     return IndexResponse(indexed=written, mode=payload.mode, total_rows=db.row_count())
 
 
+@app.post(
+    "/reindex",
+    response_model=ReindexResponse,
+    dependencies=[Depends(require_index_api_key)],
+)
+def trigger_reindex() -> ReindexResponse:
+    started = reindex.trigger_background()
+    return ReindexResponse(
+        status="started" if started else "already_running", row_count=db.row_count()
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(
-        status="ok", row_count=db.row_count(), embedding_model=settings.EMBEDDING_MODEL_NAME
+        status="ok",
+        row_count=db.row_count(),
+        embedding_model=settings.EMBEDDING_MODEL_NAME,
     )

@@ -49,3 +49,8 @@ class HealthResponse(BaseModel):
     status: str
     row_count: int
     embedding_model: str
+
+
+class ReindexResponse(BaseModel):
+    status: Literal["started", "already_running"]
+    row_count: int

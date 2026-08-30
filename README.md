@@ -153,6 +153,27 @@ curl -X POST http://ec-faq-vector:8001/index \
 `GET /health` on `ec-faq-vector` reports `row_count` and the active
 `embedding_model_name`.
 
+### Keeping the index in sync
+
+`ec-faq-vector` also reindexes itself directly from GitHub, so an edit to
+the upstream dataset reaches search without a manual `/index` upload:
+
+- Fetches `TAG_ANSWER_URL` (tag → answer) and `QUESTION_TAG_CSV_URL`
+  (question, tag paraphrase pairs) — the same two files documented in
+  [Synesis-IT-PLC/ec-faq-bot](https://github.com/Synesis-IT-PLC/ec-faq-bot)'s
+  `full_dataset/` — joins them into `{tag, question, answer}` entries, and
+  replaces the whole `faq_entries` table (`src/vector/reindex.py`).
+- Runs once a day at `VECTOR_REINDEX_HOUR_UTC` (default `3`, i.e. 03:00 UTC)
+  via [APScheduler](https://apscheduler.readthedocs.io/); set
+  `VECTOR_REINDEX_ENABLED=false` to turn off the schedule entirely.
+- `POST /reindex` triggers the same job on demand (same `X-API-Key` gate as
+  `/index`); a reindex already in progress makes a second call a no-op
+  (`{"status": "already_running"}`) rather than running two in parallel.
+- A full reindex re-embeds every row from scratch, so it costs roughly what
+  the initial load did — with the default model that's tens of minutes for
+  the current dataset size, not seconds. `GET /health`'s `row_count` only
+  changes once the run completes (it replaces the table in one transaction).
+
 ### Retrieval parameters
 
 The UI sends a `params` object per request. `top_k` is forwarded to
@@ -182,7 +203,10 @@ actually touch:
 | `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
 | `TOP_SIMILAR_API_URL` | `http://ec-faq-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
 | `VECTOR_EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
-| `VECTOR_INDEX_API_KEY` | *(unset)* | Required `X-API-Key` on `POST /index` once set |
+| `VECTOR_INDEX_API_KEY` | *(unset)* | Required `X-API-Key` on `POST /index` and `POST /reindex` once set |
+| `VECTOR_REINDEX_ENABLED` | `true` | Daily automatic reindex from GitHub; `POST /reindex` still works if `false` |
+| `VECTOR_REINDEX_HOUR_UTC` | `3` | UTC hour the daily reindex runs at |
+| `QUESTION_TAG_CSV_URL` | `…/full_dataset/question_tag.csv` | Question/tag paraphrase source for the daily reindex |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |

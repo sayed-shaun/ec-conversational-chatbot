@@ -250,13 +250,58 @@ class VectorSettings(BaseSettings):
     INDEX_API_KEY: str = Field(
         default="",
         description=(
-            "If set, POST /index requires this value in the X-API-Key "
-            "header. Empty leaves the endpoint open (fine behind a private "
-            "network, not fine on the public internet)."
+            "If set, POST /index and POST /reindex require this value in "
+            "the X-API-Key header. Empty leaves them open (fine behind a "
+            "private network, not fine on the public internet)."
         ),
     )
     VECTOR_API_HOST: str = Field(default="0.0.0.0")
     VECTOR_API_PORT: int = Field(default=8001)
+
+    # -- Daily dataset refresh (src/vector/reindex.py) -----------------------
+    # Rebuilds faq_entries from the same GitHub source tag_answer.json/
+    # question_tag.csv come from, so an edit landed upstream reaches search
+    # without a manual /index upload.
+    TAG_ANSWER_URL: str = Field(
+        default=(
+            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
+            "development/full_dataset/tag_answer.json"
+        ),
+        description="Raw URL of the tag -> answer JSON.",
+    )
+    QUESTION_TAG_CSV_URL: str = Field(
+        default=(
+            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
+            "development/full_dataset/question_tag.csv"
+        ),
+        description="Raw URL of the question,tag CSV (paraphrases per tag).",
+    )
+    GITHUB_TOKEN: str = Field(
+        default="",
+        description=(
+            "GitHub token for TAG_ANSWER_URL/QUESTION_TAG_CSV_URL; required "
+            "while the repo is private."
+        ),
+    )
+    REINDEX_FETCH_TIMEOUT: float = Field(
+        default=30.0,
+        description="Timeout in seconds for each GitHub fetch during a reindex.",
+    )
+    REINDEX_ENABLED: bool = Field(
+        default=True,
+        description="Run the daily scheduled reindex. Manual POST /reindex works either way.",
+    )
+    REINDEX_HOUR_UTC: int = Field(
+        default=3,
+        ge=0,
+        le=23,
+        description=(
+            "UTC hour to run the daily reindex at (0-23), chosen once at "
+            "startup and re-picked after each run -- a fixed time rather "
+            "than 'every 24h from whenever the container booted', so a "
+            "restart at any hour doesn't shift it to a busier time of day."
+        ),
+    )
 
 
 chatbot_settings = ChatbotSettings()

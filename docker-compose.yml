@@ -27,6 +27,11 @@ services:
       EMBEDDING_DIM: ${VECTOR_EMBEDDING_DIM:-1024}
       EMBEDDING_CACHE_DIR: /root/.cache/fastembed_cache
       INDEX_API_KEY: ${VECTOR_INDEX_API_KEY:-}
+      TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
+      QUESTION_TAG_CSV_URL: ${QUESTION_TAG_CSV_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/question_tag.csv}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      REINDEX_ENABLED: ${VECTOR_REINDEX_ENABLED:-true}
+      REINDEX_HOUR_UTC: ${VECTOR_REINDEX_HOUR_UTC:-3}
       VECTOR_API_HOST: 0.0.0.0
       VECTOR_API_PORT: 8001
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
