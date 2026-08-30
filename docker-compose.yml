@@ -37,6 +37,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - vector-model-cache:/root/.cache/fastembed_cache
+    ports:
+      # Localhost-only: /index and /reindex have no auth by default
+      # (VECTOR_INDEX_API_KEY unset), so this isn't published to 0.0.0.0.
+      - "127.0.0.1:8001:8001"
     depends_on:
       pgvector-db:
         condition: service_healthy
