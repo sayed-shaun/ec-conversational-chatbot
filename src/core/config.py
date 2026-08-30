@@ -149,7 +149,7 @@ class VectorSettings(BaseSettings):
     )
     QUESTION_TAG_CSV_URL: str = (
         "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-        "development/full_dataset/question_tag.csv"
+        "feat/multilingual-en-banglish-questions/full_dataset/question_tag.csv"
     )
     GITHUB_TOKEN: str = ""
     REINDEX_FETCH_TIMEOUT: float = 30.0
