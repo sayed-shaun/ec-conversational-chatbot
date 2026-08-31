@@ -24,7 +24,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from src.core.config import vector_settings as settings
 from src.core.logger import get_logger
-from src.vector import db
+from src.vector.db import db_manager
 from src.vector.embeddings import embed_passages
 
 logger = get_logger(__name__)
@@ -82,7 +82,7 @@ def reindex_once() -> int:
     entries = _build_entries()
     if not entries:
         logger.warning("reindex fetched zero usable entries; leaving faq_entries untouched")
-        return db.row_count()
+        return db_manager.row_count()
 
     logger.info("reindexing %d entries from %s", len(entries), settings.QUESTION_TAG_CSV_URL)
     vectors = embed_passages([question for _, question, _ in entries])
@@ -90,7 +90,7 @@ def reindex_once() -> int:
         (tag, question, answer, vector)
         for (tag, question, answer), vector in zip(entries, vectors)
     ]
-    written = db.replace_all(rows)
+    written = db_manager.replace_all(rows)
     logger.info("reindex complete: %d rows", written)
     return written
 
