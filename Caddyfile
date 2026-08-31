@@ -1,6 +1,6 @@
 :80 {
 	handle /asr* {
-		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
+		reverse_proxy {$ASR_URL:http://172.31.60.228:8006}
 	}
 
 	handle /ocr* {

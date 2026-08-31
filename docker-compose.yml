@@ -87,7 +87,7 @@ services:
       dockerfile: api.Dockerfile
     container_name: ec-conversational-chatbot
     environment:
-      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
+      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://172.31.60.228:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
       MCP_SERVER_URL: http://ec-conversational-mcp:9000/mcp
@@ -116,7 +116,7 @@ services:
     image: caddy:2-alpine
     container_name: ec-conversational-caddy
     environment:
-      ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
+      ASR_URL: ${ASR_URL:-http://172.31.60.228:8006}
       OCR_URL: ${OCR_URL:-http://172.31.60.228:8006}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
