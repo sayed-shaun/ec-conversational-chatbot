@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f6b45" />
   <title>নির্বাচন কমিশন চ্যাটবট</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
   <style>
   :root {
     --green: #0f6b45;
@@ -378,14 +379,39 @@
   .answer p:last-child { margin-bottom: 0; }
   .answer ul, .answer ol { margin: 0 0 0.6em; padding-left: 1.4em; }
   .answer li { margin-bottom: 0.2em; }
-  .answer h3, .answer h4, .answer h5, .answer h6 {
+  .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6 {
     margin: 0.6em 0 0.3em;
     font-size: 1em;
     font-weight: 700;
   }
-  .answer h3:first-child, .answer h4:first-child { margin-top: 0; }
+  .answer h1:first-child, .answer h2:first-child, .answer h3:first-child, .answer h4:first-child {
+    margin-top: 0;
+  }
   .answer strong { font-weight: 700; }
   .answer em { font-style: italic; }
+  .answer del { opacity: 0.7; }
+  .answer hr { border: none; border-top: 1px solid var(--line); margin: 0.8em 0; }
+  .answer blockquote {
+    margin: 0 0 0.6em;
+    padding: 2px 0 2px 10px;
+    border-left: 3px solid var(--green-line);
+    color: var(--muted);
+  }
+  .row.user .answer blockquote { border-left-color: rgba(255,255,255,0.4); color: inherit; opacity: 0.85; }
+  .answer table {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 0 0 0.6em;
+    font-size: 0.9em;
+  }
+  .answer th, .answer td {
+    border: 1px solid var(--line);
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .row.user .answer th, .row.user .answer td { border-color: rgba(255,255,255,0.35); }
+  .answer .katex-display { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
   .answer code {
     font-family: var(--mono);
     font-size: 0.85em;
@@ -486,6 +512,10 @@
     </form>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <script>
   /*
    * Base URL of the chatbot API. Empty means same-origin, which is what
@@ -501,109 +531,31 @@
    */
   const API_BASE = '';
 
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function renderInline(text) {
-    let out = escapeHtml(text);
-    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-    out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-    out = out.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
-    out = out.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    return out;
-  }
+  /*
+   * Full markdown (marked) + math (KaTeX) rendering, rather than the small
+   * hand-rolled subset this used to cover -- the model sometimes emits
+   * LaTeX (e.g. "$\rightarrow$") or richer markdown (tables, nested lists)
+   * that subset didn't handle. marked's output is untrusted (LLM-generated,
+   * and ultimately influenced by whatever the user or a search result put
+   * in front of the model), so it's sanitized with DOMPurify before it ever
+   * touches innerHTML.
+   */
+  marked.setOptions({ breaks: true });
 
   function renderMarkdown(source) {
-    const lines = source.replace(/\r\n/g, '\n').split('\n');
-    const html = [];
-    let paragraph = [];
-    let list = null;
-    let inCode = false;
-    let codeLines = [];
+    return DOMPurify.sanitize(marked.parse(source));
+  }
 
-    function flushParagraph() {
-      if (paragraph.length) {
-        html.push('<p>' + renderInline(paragraph.join(' ')) + '</p>');
-        paragraph = [];
-      }
-    }
-
-    function flushList() {
-      if (list) {
-        html.push('</' + list + '>');
-        list = null;
-      }
-    }
-
-    for (const rawLine of lines) {
-      const line = rawLine.trimEnd();
-
-      if (line.trim().startsWith('```')) {
-        if (inCode) {
-          html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
-          codeLines = [];
-          inCode = false;
-        } else {
-          flushParagraph();
-          flushList();
-          inCode = true;
-        }
-        continue;
-      }
-      if (inCode) {
-        codeLines.push(rawLine);
-        continue;
-      }
-
-      if (line.trim() === '') {
-        flushParagraph();
-        continue;
-      }
-
-      const heading = line.match(/^(#{1,4})\s+(.*)$/);
-      if (heading) {
-        flushParagraph();
-        flushList();
-        const level = heading[1].length + 2;
-        html.push('<h' + level + '>' + renderInline(heading[2]) + '</h' + level + '>');
-        continue;
-      }
-
-      const ordered = line.match(/^\s*[0-9০-৯]+[.)]\s+(.*)$/);
-      const bulleted = line.match(/^\s*[-*•]\s+(.*)$/);
-      if (ordered || bulleted) {
-        flushParagraph();
-        const tag = ordered ? 'ol' : 'ul';
-        if (list !== tag) {
-          flushList();
-          html.push('<' + tag + '>');
-          list = tag;
-        }
-        html.push('<li>' + renderInline((ordered || bulleted)[1]) + '</li>');
-        continue;
-      }
-
-      flushList();
-      paragraph.push(line);
-    }
-
-    flushParagraph();
-    flushList();
-    if (inCode && codeLines.length) {
-      html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
-    }
-
-    return html.join('');
+  function renderMath(container) {
+    renderMathInElement(container, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false },
+      ],
+      throwOnError: false,
+    });
   }
 
   const messagesEl = document.getElementById('messages');
@@ -671,6 +623,11 @@
 
   function renderAnswer(answerEl, raw) {
     answerEl.innerHTML = renderMarkdown(raw);
+    answerEl.querySelectorAll('a[href]').forEach((a) => {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    });
+    renderMath(answerEl);
   }
 
   function addRetryButton(bubble, text) {
