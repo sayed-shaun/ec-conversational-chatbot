@@ -302,6 +302,20 @@
   }
   .mic-status.error { color: var(--red); }
 
+  .image-btn {
+    flex: none;
+    width: 42px; height: 42px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--green);
+    cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .image-btn:hover:not(:disabled) { background: var(--green-soft); }
+  .image-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .image-btn svg { width: 19px; height: 19px; }
+
   @media (max-width: 600px) {
     .bubble { max-width: 85%; }
     .app {
@@ -317,6 +331,7 @@
     .icon-btn svg { width: 20px; height: 20px; }
     .send-btn { width: 44px; height: 44px; }
     .mic-btn { width: 44px; height: 44px; }
+    .image-btn { width: 44px; height: 44px; }
     .composer-input {
       font-size: 16px;
       padding: 12px 14px;
@@ -398,14 +413,23 @@
     <main id="messages" class="messages" aria-live="polite"></main>
 
     <div id="mic-status" class="mic-status" aria-live="polite"></div>
+    <div id="image-status" class="mic-status" aria-live="polite"></div>
 
     <form id="chat-form" class="composer">
+      <input id="image-input" type="file" accept="image/*" hidden />
       <textarea
         id="question-input"
         class="composer-input"
         placeholder="আপনার প্রশ্ন লিখুন..."
         rows="1"
       ></textarea>
+      <button id="image-btn" class="image-btn" type="button" aria-label="ছবি থেকে লেখা নিন" title="ছবি আপলোড করুন">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <path d="M21 15l-5-5L5 21"></path>
+        </svg>
+      </button>
       <button id="mic-btn" class="mic-btn" type="button" aria-label="ভয়েস ইনপুট" title="কথা বলে প্রশ্ন করুন">
         <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -553,6 +577,9 @@
   const resetBtn = document.getElementById('reset-btn');
   const micBtn = document.getElementById('mic-btn');
   const micStatus = document.getElementById('mic-status');
+  const imageBtn = document.getElementById('image-btn');
+  const imageInput = document.getElementById('image-input');
+  const imageStatus = document.getElementById('image-status');
 
   let sessionId = localStorage.getItem('ec_faq_session_id') || null;
   let busy = false;
@@ -1000,6 +1027,77 @@
       stopRecording();
     } else {
       startRecording();
+    }
+  });
+
+  /* ---------------------------------------------------------- image OCR */
+
+  function setImageStatus(text, isError) {
+    imageStatus.textContent = text || '';
+    imageStatus.classList.toggle('error', !!isError);
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // reader.result is "data:<mime>;base64,<data>" -- the API wants
+        // just the base64 payload.
+        resolve(String(reader.result).split(',', 2)[1] || '');
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function ocrImage(file) {
+    /*
+     * Caddy proxies /ocr* to the vision service (stripping the /ocr prefix),
+     * so this only ever talks to the same origin as the chat API -- same
+     * reasoning as the ASR proxy above.
+     */
+    const image = await readFileAsBase64(file);
+    const res = await fetch(API_BASE + '/ocr/api/v1/vision/ocr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify({ image }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    const data = await res.json();
+    return (data.text || '').trim();
+  }
+
+  imageBtn.addEventListener('click', () => {
+    imageInput.click();
+  });
+
+  imageInput.addEventListener('change', async () => {
+    const file = imageInput.files && imageInput.files[0];
+    imageInput.value = '';
+    if (!file) return;
+
+    imageBtn.disabled = true;
+    setImageStatus('ছবি থেকে লেখা বের করা হচ্ছে…');
+    try {
+      const text = await ocrImage(file);
+      if (!text) {
+        setImageStatus('ছবিতে কোনো লেখা পাওয়া যায়নি।', true);
+        return;
+      }
+      // Put the extracted text in the box rather than sending it blind, so
+      // an OCR mistake can be corrected before asking.
+      inputEl.value = text;
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      inputEl.focus();
+      setImageStatus('');
+    } catch (err) {
+      setImageStatus('লেখা বের করা যায়নি, আবার চেষ্টা করুন।', true);
+    } finally {
+      imageBtn.disabled = false;
     }
   });
 

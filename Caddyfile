@@ -3,6 +3,11 @@
 		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
 	}
 
+	handle /ocr* {
+		uri strip_prefix /ocr
+		reverse_proxy {$OCR_URL:http://172.31.60.228:8006}
+	}
+
 	handle {
 		reverse_proxy ec-conversational-chatbot:8000 {
 			flush_interval -1
