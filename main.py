@@ -1,8 +1,9 @@
 """
 Entrypoint for both services in this repo.
 
-    python main.py api    # FastAPI chatbot backend (default)
-    python main.py mcp    # FastMCP search_faq server
+    python main.py api      # FastAPI chatbot backend (default)
+    python main.py mcp      # FastMCP search_faq server
+    python main.py vector   # pgvector-backed FAQ search API
 
 Two containers run from the same image-building context, so keeping both
 entrypoints here means there is one obvious place to look for "how does this
@@ -27,12 +28,12 @@ def run_api() -> None:
     from src.core.config import chatbot_settings as settings
 
     logger.info(
-        "starting chatbot API on http://%s:%s", settings.api_host, settings.api_port
+        "starting chatbot API on http://%s:%s", settings.API_HOST, settings.API_PORT
     )
     uvicorn.run(
         "src.api.app:app",
-        host=settings.api_host,
-        port=settings.api_port,
+        host=settings.API_HOST,
+        port=settings.API_PORT,
     )
 
 
@@ -43,7 +44,25 @@ def run_mcp() -> None:
     mcp_main()
 
 
-SERVICES = {"api": run_api, "mcp": run_mcp}
+def run_vector() -> None:
+    """Serve the pgvector-backed FAQ search API."""
+    import uvicorn
+
+    from src.core.config import vector_settings as settings
+
+    logger.info(
+        "starting vector search API on http://%s:%s",
+        settings.VECTOR_API_HOST,
+        settings.VECTOR_API_PORT,
+    )
+    uvicorn.run(
+        "src.vector.app:app",
+        host=settings.VECTOR_API_HOST,
+        port=settings.VECTOR_API_PORT,
+    )
+
+
+SERVICES = {"api": run_api, "mcp": run_mcp, "vector": run_vector}
 
 
 def main(argv: list[str] | None = None) -> int:

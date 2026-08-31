@@ -23,25 +23,30 @@ llama-server you already have running.
 - **A `GITHUB_TOKEN`** — a PAT with read access to the private knowledge-base
   repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
   token logs `fetched 1374 tags` on boot.
-- **The `top_similar` embedding API**, returning `input_question` and
-  `top_similar[].{tag, cosine_similarity}`.
+
+Embedding search (`top_similar`) is self-hosted: `pgvector-db` (Postgres +
+pgvector) and `ec-conversational-vector` (FastAPI, local embeddings via
+[fastembed](https://github.com/qdrant/fastembed) — no third-party API, no
+outbound calls per request) both come up with `docker compose up`. The
+knowledge base starts empty — see [Indexing the knowledge
+base](#indexing-the-knowledge-base) to load it.
 
 **Run**
 
 ```bash
-cp .env.example .env      # set LLAMA_BASE_URL, TOP_SIMILAR_API_URL, GITHUB_TOKEN
+cp .env.example .env      # set LLAMA_BASE_URL, GITHUB_TOKEN
 docker compose up --build
 ```
 
 | | URL |
 |---|---|
-| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 8000) |
+| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 9100) |
 | API docs | `http://localhost:${PORT}/docs` |
 | Health | `http://localhost:${PORT}/health` |
-| MCP server | internal only — `ec-faq-mcp:9000/mcp` |
+| MCP server | internal only — `ec-conversational-mcp:9000/mcp` |
 
 Both containers share one entrypoint: `python main.py api` / `python main.py
-mcp`. The chatbot waits for `ec-faq-mcp` to report healthy; llama-server isn't
+mcp`. The chatbot waits for `ec-conversational-mcp` to report healthy; llama-server isn't
 gated by compose, so until it's up chat requests return the "call 105" fallback.
 
 ## How it works
@@ -49,18 +54,20 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | Component | Port | Role |
 |---|---|---|
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
-| **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
-| **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
+| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
+| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
-| **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
+| **`ec-conversational-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
+| **`pgvector-db`** | `:5432` internal | Postgres + [pgvector](https://github.com/pgvector/pgvector), one `faq_entries` table (tag, question, answer, embedding) |
 
 ```mermaid
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
-    CADDY --> BOT["ec-faq-chatbot<br/>tool-calling loop"]
+    CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
     BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
-    BOT -->|"model asked for search_faq"| MCP["ec-faq-mcp"]
-    MCP --> SIM["top_similar API"]
+    BOT -->|"model asked for search_faq"| MCP["ec-conversational-mcp"]
+    MCP --> SIM["ec-conversational-vector<br/>/top_similar"]
+    SIM --> PG[("pgvector-db<br/>faq_entries")]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
@@ -116,6 +123,58 @@ python scripts/load_test.py --url http://172.31.60.228:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
+### Indexing the knowledge base
+
+`ec-conversational-vector` starts with an empty `faq_entries` table. Load it with a JSON
+upload to `POST /index` — reachable from other containers on the compose
+network, or from the host at `http://localhost:8001/index` (published to
+`127.0.0.1` for the Swagger UI, see below):
+
+```bash
+curl -X POST http://localhost:8001/index \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "replace",
+    "entries": [
+      {"tag": "accepted_nid_types", "question": "কি ধরনের এনআইডি গ্রহণযোগ্য?", "answer": "সকল ধরনের জাতীয় পরিচয়পত্র গ্রহণযোগ্য..."}
+    ]
+  }'
+```
+
+- `mode: "replace"` truncates `faq_entries` first, so the upload becomes the
+  entire knowledge base — use this for a full reload.
+- `mode: "append"` (default) upserts by `(tag, question)`, for incremental
+  additions.
+- Each entry is embedded locally (fastembed) and stored with its vector; no
+  outbound calls are made per request.
+- No auth on `/index`/`/reindex` — this service isn't internet-facing (its
+  host port is bound to `127.0.0.1` only), so there's no third party to
+  gate out.
+
+`GET /health` on `ec-conversational-vector` reports `row_count` and the active
+`embedding_model_name`.
+
+### Keeping the index in sync
+
+`ec-conversational-vector` also reindexes itself directly from GitHub, so an edit to
+the upstream dataset reaches search without a manual `/index` upload:
+
+- Fetches `TAG_ANSWER_URL` (tag → answer) and `QUESTION_TAG_CSV_URL`
+  (question, tag paraphrase pairs) — the same two files documented in
+  [Synesis-IT-PLC/ec-faq-bot](https://github.com/Synesis-IT-PLC/ec-faq-bot)'s
+  `full_dataset/` — joins them into `{tag, question, answer}` entries, and
+  replaces the whole `faq_entries` table (`src/vector/reindex.py`).
+- Runs once a day at `VECTOR_REINDEX_HOUR_UTC` (default `3`, i.e. 03:00 UTC)
+  via [APScheduler](https://apscheduler.readthedocs.io/); set
+  `VECTOR_REINDEX_ENABLED=false` to turn off the schedule entirely.
+- `POST /reindex` triggers the same job on demand; a reindex already in
+  progress makes a second call a no-op (`{"status": "already_running"}`)
+  rather than running two in parallel.
+- A full reindex re-embeds every row from scratch, so it costs roughly what
+  the initial load did — with the default model that's tens of minutes for
+  the current dataset size, not seconds. `GET /health`'s `row_count` only
+  changes once the run completes (it replaces the table in one transaction).
+
 ### Retrieval parameters
 
 The UI sends a `params` object per request. `top_k` is forwarded to
@@ -143,7 +202,11 @@ actually touch:
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
-| `TOP_SIMILAR_API_URL` | `…:8002/ec_bot/top_similar/` | Embedding search API |
+| `TOP_SIMILAR_API_URL` | `http://ec-conversational-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
+| `VECTOR_EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
+| `VECTOR_REINDEX_ENABLED` | `true` | Daily automatic reindex from GitHub; `POST /reindex` still works if `false` |
+| `VECTOR_REINDEX_HOUR_UTC` | `3` | UTC hour the daily reindex runs at |
+| `QUESTION_TAG_CSV_URL` | `…/full_dataset/question_tag.csv` | Question/tag paraphrase source for the daily reindex |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
@@ -159,7 +222,7 @@ actually touch:
 ## Repo layout
 
 ```
-├── main.py               # `python main.py api` | `python main.py mcp`
+├── main.py               # `python main.py api` | `mcp` | `vector`
 ├── Caddyfile             # /asr* → ASR service, rest → chatbot
 ├── vercel.json           # build step for hosting static/index.html
 ├── scripts/              # load_test.py, point-alias.sh
@@ -175,7 +238,8 @@ actually touch:
     │   ├── client.py     # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py     # system prompt and canned replies (Bengali)
     │   └── tools.py      # tool catalogue, dispatch, result summary
-    └── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    ├── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    └── vector/           # app.py (/top_similar, /index), db.py, embeddings.py
 ```
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
@@ -221,12 +285,12 @@ successful production deployment, so this is handled — it needs a
 The MCP server isn't published on the host, so call it from inside the network:
 
 ```bash
-docker compose exec ec-faq-chatbot python - <<'PY'
+docker compose exec ec-conversational-chatbot python - <<'PY'
 import asyncio, json
 from fastmcp import Client
 
 async def main():
-    async with Client("http://ec-faq-mcp:9000/mcp") as client:
+    async with Client("http://ec-conversational-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
         result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))

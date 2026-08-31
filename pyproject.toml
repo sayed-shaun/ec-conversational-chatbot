@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ec-faq-chatbot"
+name = "ec-conversational-chatbot"
 version = "1.0.0"
 description = "Context-aware Bengali FAQ chatbot for the Bangladesh Election Commission (llama.cpp + MCP)"
 requires-python = ">=3.11"
@@ -24,15 +24,34 @@ chatbot = [
 mcp = [
     "requests>=2.31.0",
 ]
+# Vector search service: FastAPI + pgvector + local (ONNX) embeddings.
+vector = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg[binary]>=3.1.0",
+    "pgvector>=0.3.0",
+    "fastembed>=0.3.0",
+    "requests>=2.31.0",
+    "apscheduler>=3.10.0",
+]
 dev = [
     "ruff>=0.6.0",
 ]
 
 [project.scripts]
-ec-faq-mcp = "src.mcp.server:main"
+ec-conversational-mcp = "src.mcp.server:main"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.api", "src.api.v1", "src.chatbot", "src.mcp"]
+packages = [
+    "src",
+    "src.core",
+    "src.api",
+    "src.api.v1",
+    "src.chatbot",
+    "src.mcp",
+    "src.vector",
+]
 
 [tool.setuptools.package-data]
 "src.mcp" = ["tag_answer.json"]
