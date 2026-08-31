@@ -3,9 +3,10 @@ EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
 --------------------------------------------------------------------------
 Exposes a single MCP tool, `search_faq`, that:
 
-  1. Sends the user's question to the external `top_similar` embedding-search
-     API (your existing service, e.g. http://<host>:8002) and gets back the
-     top_k nearest questions with their `tag` and `cosine_similarity`.
+  1. Sends the user's question to the `top_similar` embedding-search API
+     (self-hosted by the ec-conversational-vector/pgvector service by
+     default -- see TOP_SIMILAR_API_URL) and gets back the top_k nearest
+     questions with their `tag` and `cosine_similarity`.
   2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag).
   3. Looks up the canonical Bengali answer for each unique tag in
      `tag_answer.json`.

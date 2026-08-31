@@ -34,7 +34,8 @@ from fastapi import FastAPI
 
 from src.core.config import vector_settings as settings
 from src.core.logger import get_logger
-from src.vector import db, reindex
+from src.vector import reindex
+from src.vector.db import db_manager
 from src.vector.embeddings import embed_passages, embed_query
 from src.vector.schemas import (
     HealthResponse,
@@ -50,12 +51,12 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    db.ensure_schema()
+    db_manager.ensure_schema()
     reindex.start_scheduler()
     logger.info(
         "vector service ready model=%s rows=%d",
         settings.EMBEDDING_MODEL_NAME,
-        db.row_count(),
+        db_manager.row_count(),
     )
     yield
 
@@ -66,7 +67,7 @@ app = FastAPI(title="EC FAQ Vector Search", lifespan=lifespan)
 @app.post("/top_similar", response_model=TopSimilarResponse)
 def top_similar(payload: TopSimilarRequest) -> TopSimilarResponse:
     query_vector = embed_query(payload.question)
-    matches = db.top_similar(query_vector, payload.top_k)
+    matches = db_manager.top_similar(query_vector, payload.top_k)
     return TopSimilarResponse(input_question=payload.question, top_similar=matches)
 
 
@@ -77,15 +78,22 @@ def index(payload: IndexRequest) -> IndexResponse:
         (entry.tag, entry.question, entry.answer, vector)
         for entry, vector in zip(payload.entries, vectors)
     ]
-    written = db.replace_all(rows) if payload.mode == "replace" else db.upsert(rows)
-    return IndexResponse(indexed=written, mode=payload.mode, total_rows=db.row_count())
+    written = (
+        db_manager.replace_all(rows)
+        if payload.mode == "replace"
+        else db_manager.upsert(rows)
+    )
+    return IndexResponse(
+        indexed=written, mode=payload.mode, total_rows=db_manager.row_count()
+    )
 
 
 @app.post("/reindex", response_model=ReindexResponse)
 def trigger_reindex() -> ReindexResponse:
     started = reindex.trigger_background()
     return ReindexResponse(
-        status="started" if started else "already_running", row_count=db.row_count()
+        status="started" if started else "already_running",
+        row_count=db_manager.row_count(),
     )
 
 
@@ -93,6 +101,6 @@ def trigger_reindex() -> ReindexResponse:
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        row_count=db.row_count(),
+        row_count=db_manager.row_count(),
         embedding_model=settings.EMBEDDING_MODEL_NAME,
     )
