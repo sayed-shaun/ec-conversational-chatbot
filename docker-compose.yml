@@ -116,6 +116,7 @@ services:
     image: caddy:2-alpine
     container_name: ec-conversational-caddy
     environment:
+      CHATBOT_URL: ${CHATBOT_URL:-ec-conversational-chatbot:8000}
       ASR_URL: ${ASR_URL:-http://172.31.60.228:8006}
       OCR_URL: ${OCR_URL:-http://172.31.60.228:8006}
     volumes:
