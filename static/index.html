@@ -316,6 +316,36 @@
   .image-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .image-btn svg { width: 19px; height: 19px; }
 
+  .attachment-preview { padding: 10px 16px 0; flex: none; }
+  .attachment-chip { position: relative; display: inline-block; }
+  .attachment-thumb {
+    width: 64px; height: 64px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    display: block;
+  }
+  .attachment-remove {
+    position: absolute; top: -7px; right: -7px;
+    width: 20px; height: 20px;
+    border: 2px solid var(--panel);
+    border-radius: 50%;
+    background: var(--text);
+    color: #fff;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    display: grid; place-items: center;
+  }
+
+  .msg-image {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+
   @media (max-width: 600px) {
     .bubble { max-width: 85%; }
     .app {
@@ -412,6 +442,12 @@
 
     <main id="messages" class="messages" aria-live="polite"></main>
 
+    <div id="attachment-preview" class="attachment-preview" hidden>
+      <div class="attachment-chip">
+        <img id="attachment-thumb" class="attachment-thumb" alt="" />
+        <button type="button" id="attachment-remove" class="attachment-remove" aria-label="ছবি সরান" title="ছবি সরান">×</button>
+      </div>
+    </div>
     <div id="mic-status" class="mic-status" aria-live="polite"></div>
     <div id="image-status" class="mic-status" aria-live="polite"></div>
 
@@ -580,6 +616,9 @@
   const imageBtn = document.getElementById('image-btn');
   const imageInput = document.getElementById('image-input');
   const imageStatus = document.getElementById('image-status');
+  const attachmentPreview = document.getElementById('attachment-preview');
+  const attachmentThumb = document.getElementById('attachment-thumb');
+  const attachmentRemove = document.getElementById('attachment-remove');
 
   let sessionId = localStorage.getItem('ec_faq_session_id') || null;
   let busy = false;
@@ -618,8 +657,16 @@
     return bubble;
   }
 
-  function addUserMessage(text) {
-    addRow('user').textContent = text;
+  function addUserMessage(text, imageUrl) {
+    const bubble = addRow('user');
+    if (imageUrl) {
+      const img = el('img', 'msg-image', bubble);
+      img.src = imageUrl;
+      img.alt = '';
+      // Revoke once decoded rather than on attach -- the bubble now owns it.
+      img.addEventListener('load', () => URL.revokeObjectURL(imageUrl));
+    }
+    if (text) el('div', null, bubble).textContent = text;
   }
 
   function renderAnswer(answerEl, raw) {
@@ -846,20 +893,41 @@
   }
 
   async function submit() {
-    const text = inputEl.value.trim();
-    if (!text || busy) return;
+    const caption = inputEl.value.trim();
+    const imageFile = attachedImageFile;
+    const imageUrl = attachedImageUrl;
+    if ((!caption && !imageFile) || busy) return;
 
     busy = true;
     sendBtn.disabled = true;
-    addUserMessage(text);
-    inputEl.value = '';
-    inputEl.style.height = 'auto';
+    imageBtn.disabled = true;
 
     try {
+      let text = caption;
+      if (imageFile) {
+        setImageStatus('ছবি থেকে লেখা বের করা হচ্ছে…');
+        const ocrText = await ocrImage(imageFile);
+        setImageStatus('');
+        text = caption ? caption + '\n\n' + ocrText : ocrText;
+        if (!text) {
+          // Leave the caption/attachment in place so the user can just retry.
+          setImageStatus('ছবিতে কোনো লেখা পাওয়া যায়নি।', true);
+          return;
+        }
+      }
+
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      clearAttachedImage(false); // ownership of imageUrl passes to the sent bubble
+      addUserMessage(caption, imageUrl);
       await ask(text);
+    } catch (err) {
+      // Leave the caption/attachment in place so the user can just retry.
+      setImageStatus('ছবি থেকে লেখা বের করা যায়নি, আবার চেষ্টা করুন।', true);
     } finally {
       busy = false;
       sendBtn.disabled = false;
+      imageBtn.disabled = false;
       inputEl.focus();
     }
   }
@@ -1150,34 +1218,46 @@
     return (data.text || '').trim();
   }
 
+  /*
+   * Selecting an image only attaches it -- like ChatGPT's composer -- so the
+   * user can type a question alongside it. OCR only runs at send time (see
+   * submit()), and its extracted text rides along with the caption rather
+   * than overwriting whatever the user typed.
+   */
+  let attachedImageFile = null;
+  let attachedImageUrl = null;
+
+  function setAttachedImage(file) {
+    clearAttachedImage();
+    attachedImageFile = file;
+    attachedImageUrl = URL.createObjectURL(file);
+    attachmentThumb.src = attachedImageUrl;
+    attachmentPreview.hidden = false;
+    setImageStatus('');
+  }
+
+  function clearAttachedImage(revoke) {
+    if (attachedImageUrl && revoke !== false) URL.revokeObjectURL(attachedImageUrl);
+    attachedImageFile = null;
+    attachedImageUrl = null;
+    attachmentThumb.src = '';
+    attachmentPreview.hidden = true;
+  }
+
+  attachmentRemove.addEventListener('click', () => {
+    clearAttachedImage();
+  });
+
   imageBtn.addEventListener('click', () => {
     imageInput.click();
   });
 
-  imageInput.addEventListener('change', async () => {
+  imageInput.addEventListener('change', () => {
     const file = imageInput.files && imageInput.files[0];
     imageInput.value = '';
     if (!file) return;
-
-    imageBtn.disabled = true;
-    setImageStatus('ছবি থেকে লেখা বের করা হচ্ছে…');
-    try {
-      const text = await ocrImage(file);
-      if (!text) {
-        setImageStatus('ছবিতে কোনো লেখা পাওয়া যায়নি।', true);
-        return;
-      }
-      // Put the extracted text in the box rather than sending it blind, so
-      // an OCR mistake can be corrected before asking.
-      inputEl.value = text;
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-      inputEl.focus();
-      setImageStatus('');
-    } catch (err) {
-      setImageStatus('লেখা বের করা যায়নি, আবার চেষ্টা করুন।', true);
-    } finally {
-      imageBtn.disabled = false;
-    }
+    setAttachedImage(file);
+    inputEl.focus();
   });
 
   resetBtn.addEventListener('click', async () => {

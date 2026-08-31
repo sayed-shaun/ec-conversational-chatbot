@@ -9,7 +9,7 @@
 	}
 
 	handle {
-		reverse_proxy ec-conversational-chatbot:8000 {
+		reverse_proxy {$CHATBOT_URL:ec-conversational-chatbot:8000} {
 			flush_interval -1
 		}
 	}
