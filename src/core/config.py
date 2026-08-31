@@ -137,7 +137,12 @@ class VectorSettings(BaseSettings):
     EMBEDDING_DIM: int = 1024
     EMBEDDING_CACHE_DIR: str = "/root/.cache/fastembed_cache"
     RETRIEVAL_TASK: str = (
-        "Given a question, retrieve the FAQ entry that best answers it"
+        "You are an expert in matching Bangladeshi National Identity Card (NID) "
+        "and voter registration queries. Your task is to identify the most "
+        "semantically relevant question from the provided document, considering "
+        "context, intent, and specific details. Use semantic similarity and "
+        "contextual understanding to retrieve the closest match, prioritizing "
+        "exact phrase matches and context-aware matching."
     )
 
     VECTOR_API_HOST: str = "0.0.0.0"
