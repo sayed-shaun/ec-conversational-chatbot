@@ -51,8 +51,8 @@ class OpenAIClient:
         }
         if stream:
             kwargs["stream"] = True
-        if settings.llama_reasoning_effort:
-            kwargs["reasoning_effort"] = settings.llama_reasoning_effort
+        if settings.LLAMA_REASONING_EFFORT:
+            kwargs["reasoning_effort"] = settings.LLAMA_REASONING_EFFORT
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
@@ -135,5 +135,5 @@ class McpClient:
         return await self.call_tool("search_faq", arguments)
 
 
-openai_client = OpenAIClient(settings.llama_base_url, settings.llama_model)
-mcp_client = McpClient(settings.mcp_server_url)
+openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
+mcp_client = McpClient(settings.MCP_SERVER_URL)

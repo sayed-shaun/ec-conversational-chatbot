@@ -38,7 +38,7 @@ async def sweep_expired_sessions() -> None:
     means in practice. Cancellation during shutdown is expected and is not an
     error.
     """
-    interval = settings.session_sweep_minutes * 60
+    interval = settings.SESSION_SWEEP_MINUTES * 60
     while True:
         try:
             await asyncio.sleep(interval)
@@ -60,12 +60,12 @@ async def lifespan(application: FastAPI):
     await checkpointer.purge_expired()
 
     sweeper = None
-    if settings.session_ttl_minutes > 0:
+    if settings.SESSION_TTL_MINUTES > 0:
         sweeper = asyncio.create_task(sweep_expired_sessions())
         logger.info(
             "session expiry on: ttl=%dmin sweep=%dmin",
-            settings.session_ttl_minutes,
-            settings.session_sweep_minutes,
+            settings.SESSION_TTL_MINUTES,
+            settings.SESSION_SWEEP_MINUTES,
         )
     else:
         logger.info("session expiry off; transcripts kept until reset")
@@ -84,7 +84,7 @@ async def lifespan(application: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(title="EC FAQ Chatbot", version="1.0.0", lifespan=lifespan)
 
-    origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
     application.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -105,15 +105,15 @@ def create_app() -> FastAPI:
 
     application.mount(
         "/static",
-        StaticFiles(directory=settings.static_dir, html=True),
+        StaticFiles(directory=settings.STATIC_DIR, html=True),
         name="static",
     )
 
     logger.info(
         "chatbot app ready llama=%s mcp=%s static=%s",
-        settings.llama_base_url,
-        settings.mcp_server_url,
-        settings.static_dir,
+        settings.LLAMA_BASE_URL,
+        settings.MCP_SERVER_URL,
+        settings.STATIC_DIR,
     )
     return application
 

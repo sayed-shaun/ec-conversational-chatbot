@@ -144,7 +144,7 @@ class SqliteCheckpointer:
         turn for ttl_minutes. A TTL of 0 or less disables expiry and keeps
         transcripts until they are reset explicitly.
         """
-        ttl = settings.session_ttl_minutes if ttl_minutes is None else ttl_minutes
+        ttl = settings.SESSION_TTL_MINUTES if ttl_minutes is None else ttl_minutes
         if ttl <= 0:
             return 0
 
@@ -154,4 +154,4 @@ class SqliteCheckpointer:
         return removed
 
 
-checkpointer = SqliteCheckpointer(settings.session_db_path)
+checkpointer = SqliteCheckpointer(settings.SESSION_DB_PATH)
