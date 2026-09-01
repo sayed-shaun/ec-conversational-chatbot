@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f6b45" />
   <title>নির্বাচন কমিশন চ্যাটবট</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
   <style>
   :root {
     --green: #0f6b45;
@@ -23,7 +24,15 @@
 
   * { box-sizing: border-box; }
 
-  html, body { height: 100%; overflow: hidden; }
+  /*
+   * position: fixed, not just overflow: hidden -- on iOS Safari, focusing an
+   * input auto-scrolls the *page* to keep it above the keyboard, and that
+   * scroll happens at the visual-viewport level, bypassing normal overflow
+   * rules. Pinning html/body removes any document-level scroll surface for
+   * it to act on; syncAppHeight() below also snaps window scroll back to
+   * (0, 0) as a second line of defense.
+   */
+  html, body { height: 100%; overflow: hidden; position: fixed; width: 100%; }
 
   body {
     margin: 0;
@@ -359,6 +368,7 @@
     margin: 0 0 0.6em;
   }
   .answer pre code { background: none; border: none; padding: 0; color: inherit; }
+  .answer .katex-display { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
   .answer a { color: var(--green-dark); text-decoration: underline; }
   .row.user .answer a { color: #fff; }
 
@@ -426,6 +436,8 @@
     </form>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <script>
   /*
    * Base URL of the chatbot API. Empty means same-origin, which is what
@@ -595,8 +607,21 @@
     addRow('user').textContent = text;
   }
 
+  function renderMath(container) {
+    renderMathInElement(container, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false },
+      ],
+      throwOnError: false,
+    });
+  }
+
   function renderAnswer(answerEl, raw) {
     answerEl.innerHTML = renderMarkdown(raw);
+    renderMath(answerEl);
   }
 
   function addRetryButton(bubble, text) {
@@ -866,6 +891,14 @@
     const vv = window.visualViewport;
     if (!vv) return;
     document.documentElement.style.setProperty('--app-h', vv.height + 'px');
+    /*
+     * iOS Safari scrolls the page itself to keep a focused input above the
+     * keyboard, which -- with html/body now pinned via position: fixed --
+     * just leaves blank space where the page tried and failed to scroll.
+     * Snapping back to (0, 0) on every visual-viewport change (which fires
+     * exactly when that auto-scroll attempt happens) cancels it out.
+     */
+    window.scrollTo(0, 0);
   }
 
   if (window.visualViewport) {
