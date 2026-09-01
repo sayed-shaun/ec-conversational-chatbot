@@ -375,6 +375,15 @@
     .header { padding: 10px 14px; }
   }
 
+  /*
+   * .bubble sets white-space: pre-wrap for plain-text messages (user text,
+   * greet(), think-body). .answer holds rendered HTML from marked instead,
+   * where block elements (p, li, ...) already carry their own margins --
+   * pre-wrap would also turn the whitespace/newlines *between* those tags in
+   * marked's output into extra visible line breaks, stacking on top of the
+   * margins and doubling the gap after list items and paragraphs.
+   */
+  .answer { white-space: normal; }
   .answer p { margin: 0 0 0.6em; }
   .answer p:last-child { margin-bottom: 0; }
   .answer ul, .answer ol { margin: 0 0 0.6em; padding-left: 1.4em; }
