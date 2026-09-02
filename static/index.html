@@ -1389,17 +1389,20 @@
       this.setOrbState(null);
       this.setStatus('শুনছি…');
 
-      const SPEECH_THRESHOLD = 0.035;
-      // Higher bar + a grace window for interrupting the bot's own reply:
-      // echoCancellation suppresses most speaker-to-mic leakage, but not
-      // perfectly (e.g. no headset, external speakers), so barge-in needs to
-      // be more conservative than normal listening to avoid the bot cutting
-      // itself off on its own voice.
-      const BARGE_IN_THRESHOLD = 0.09;
+      // autoGainControl (enabled for barge-in's echo handling) amplifies
+      // quiet input, including room noise -- a threshold tuned for "any
+      // audible sound" ends up triggering on fan hum, clicks, a cough. Both
+      // thresholds are set higher than a bare loudness read would suggest,
+      // and below they must hold for CONFIRM_MS straight (not just one
+      // frame) before counting as real speech, to reject brief transients.
+      const SPEECH_THRESHOLD = 0.06;
+      const BARGE_IN_THRESHOLD = 0.12;
+      const CONFIRM_MS = 120;
       const BARGE_IN_GRACE_MS = 400;
       const SILENCE_MS = 1200;
       const MAX_UTTERANCE_MS = 20000;
       const data = new Uint8Array(this.analyser.fftSize);
+      let loudStreakStart = null;
 
       this.maxDurationTimer = setTimeout(() => {
         if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
@@ -1416,10 +1419,17 @@
         const level = Math.sqrt(sumSquares / data.length);
         voiceOrb.style.transform = 'scale(' + (1 + Math.min(level * 3, 0.35)) + ')';
 
-        const loud = this.speaking
+        const aboveThreshold = this.speaking
           ? level > BARGE_IN_THRESHOLD &&
             performance.now() - this.speakingStartedAt > BARGE_IN_GRACE_MS
           : level > SPEECH_THRESHOLD;
+
+        if (aboveThreshold) {
+          if (loudStreakStart === null) loudStreakStart = performance.now();
+        } else {
+          loudStreakStart = null;
+        }
+        const loud = aboveThreshold && performance.now() - loudStreakStart >= CONFIRM_MS;
 
         if (loud) {
           if (this.speaking && this.interruptPlayback) {
