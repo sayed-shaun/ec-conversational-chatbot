@@ -3,6 +3,10 @@
 		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
 	}
 
+	# TTS is not proxied directly here: that service has no CORS support, so
+	# it's reached via the chatbot app's own POST /api/v1/tts instead, which
+	# inherits CORSMiddleware -- see TTS_URL in src/core/config.py.
+
 	handle {
 		reverse_proxy ec-faq-chatbot:8000 {
 			flush_interval -1

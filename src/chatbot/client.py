@@ -13,8 +13,9 @@ Module-level `openai_client` and `mcp_client` instances are built from
 settings at import, so callers just use them.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 from fastmcp import Client
 from openai import AsyncOpenAI, OpenAI
 
@@ -135,5 +136,35 @@ class McpClient:
         return await self.call_tool("search_faq", arguments)
 
 
+class TtsClient:
+    """Forwards speech-synthesis requests to the TTS service server-side.
+
+    Proxied through this app rather than letting the browser call the TTS
+    host directly, since that service has no CORS support -- see TTS_URL's
+    docstring in core/config.py.
+    """
+
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url.rstrip("/")
+
+    async def synthesize(
+        self, input_text: str, voice: str = "Aditi", response_format: str = "wav"
+    ) -> Tuple[bytes, str]:
+        """Returns (audio_bytes, content_type). Raises httpx errors on failure."""
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/v1/audio/speech",
+                json={
+                    "input": input_text,
+                    "voice": voice,
+                    "response_format": response_format,
+                },
+            )
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "audio/wav")
+            return resp.content, content_type
+
+
 openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
 mcp_client = McpClient(settings.MCP_SERVER_URL)
+tts_client = TtsClient(settings.TTS_URL)

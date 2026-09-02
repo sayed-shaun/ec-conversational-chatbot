@@ -8,11 +8,19 @@ the engine.
 import json
 import uuid
 
-from fastapi import APIRouter
+import httpx
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
-from src.api.v1.schemas import ChatRequest, ChatResponse, ResetRequest, ResetResponse
+from src.api.v1.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ResetRequest,
+    ResetResponse,
+    TtsRequest,
+)
 from src.chatbot.chat import Chat
+from src.chatbot.client import tts_client
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -74,3 +82,27 @@ async def reset(req: ResetRequest) -> ResetResponse:
     logger.info("session reset session=%s", session_id)
 
     return ResetResponse(session_id=session_id)
+
+
+@router.post("/tts")
+async def tts(req: TtsRequest) -> Response:
+    """Proxy to the TTS service, server-side.
+
+    The browser calls this instead of the TTS service directly because that
+    service has no CORS support -- a UI hosted on a different origin (e.g.
+    Vercel) would have the request blocked by the browser otherwise. This
+    app's own CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
+    other.
+    """
+    try:
+        audio, content_type = await tts_client.synthesize(
+            req.input, req.voice, req.response_format
+        )
+    except httpx.HTTPStatusError as exc:
+        logger.warning("TTS service returned %s", exc.response.status_code)
+        raise HTTPException(status_code=502, detail="TTS service error") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("TTS service unreachable: %s", exc)
+        raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
+
+    return Response(content=audio, media_type=content_type)

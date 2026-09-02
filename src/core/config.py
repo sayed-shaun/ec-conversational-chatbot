@@ -69,6 +69,19 @@ class ChatbotSettings(BaseSettings):
         description="Streamable HTTP endpoint of the EC FAQ MCP server.",
     )
 
+    TTS_URL: str = Field(
+        default="http://172.31.60.228:9300",
+        description=(
+            "Base URL of the Indic Parler Streaming TTS service. Proxied "
+            "server-side via POST /api/v1/tts rather than letting the "
+            "browser call it directly through Caddy, because that service "
+            "has no CORS support of its own -- a UI hosted on a different "
+            "origin (e.g. Vercel) would have its request blocked by the "
+            "browser otherwise. Routing it through this app's own "
+            "CORSMiddleware (CORS_ALLOW_ORIGINS) sidesteps that."
+        ),
+    )
+
     CORS_ALLOW_ORIGINS: str = Field(
         default="*",
         description=(

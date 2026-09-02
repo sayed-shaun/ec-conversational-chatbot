@@ -40,3 +40,12 @@ class ChatResponse(BaseModel):
 class ResetResponse(BaseModel):
     session_id: str
     status: str = "reset"
+
+
+class TtsRequest(BaseModel):
+    """Mirrors the shape the browser already sends to the TTS service's own
+    OpenAI-style /v1/audio/speech, so the frontend barely changes."""
+
+    input: str
+    voice: str = "Aditi"
+    response_format: str = "wav"
