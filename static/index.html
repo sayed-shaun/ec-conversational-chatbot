@@ -290,26 +290,6 @@
   .mic-btn:hover:not(:disabled) { background: var(--green-soft); }
   .mic-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .mic-btn svg { width: 19px; height: 19px; }
-  .mic-btn .stop-icon { display: none; }
-  .mic-btn.recording {
-    background: var(--red);
-    border-color: var(--red);
-    color: #fff;
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  .mic-btn.recording .mic-icon { display: none; }
-  .mic-btn.recording .stop-icon { display: block; }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 42, 65, 0.45); }
-    50%      { box-shadow: 0 0 0 7px rgba(244, 42, 65, 0); }
-  }
-  .mic-status {
-    font-size: 0.75rem;
-    color: var(--muted);
-    padding: 0 16px 6px;
-    min-height: 1.1em;
-  }
-  .mic-status.error { color: var(--red); }
 
   @media (max-width: 600px) {
     .bubble { max-width: 85%; }
@@ -383,6 +363,105 @@
     cursor: pointer;
   }
   .retry-btn:hover { background: var(--green-soft); border-color: var(--green-line); }
+
+  /* --------------------------------------------------- voice mode overlay */
+
+  .voice-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: radial-gradient(circle at 50% 30%, #163326 0%, #0b1d15 55%, #071410 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    color: #fff;
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+  }
+  .voice-overlay[hidden] { display: none; }
+
+  .voice-top {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+  .voice-status {
+    font-size: 0.95rem;
+    color: rgba(255,255,255,0.75);
+    letter-spacing: 0.02em;
+    min-height: 1.3em;
+    text-align: center;
+  }
+
+  .voice-orb-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+  .voice-orb {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4fd18b, var(--green) 55%, var(--green-dark) 100%);
+    box-shadow: 0 0 40px 10px rgba(45, 200, 130, 0.35);
+    transition: transform 0.09s ease-out, box-shadow 0.2s ease-out, background 0.3s ease;
+    transform: scale(1);
+  }
+  .voice-orb.thinking {
+    background: radial-gradient(circle at 35% 30%, #ffd27a, var(--amber) 55%, #8a5000 100%);
+    box-shadow: 0 0 40px 10px rgba(255, 178, 60, 0.3);
+    animation: voice-think-spin 1.1s linear infinite;
+  }
+  .voice-orb.speaking {
+    animation: voice-speak-pulse 0.6s ease-in-out infinite;
+  }
+  .voice-orb.error {
+    background: radial-gradient(circle at 35% 30%, #ff8f8f, var(--red) 55%, #7a0f1e 100%);
+    box-shadow: 0 0 40px 10px rgba(244, 42, 65, 0.3);
+  }
+  @keyframes voice-think-spin {
+    0%, 100% { transform: scale(0.94) rotate(0deg); }
+    50% { transform: scale(1.02) rotate(180deg); }
+  }
+  @keyframes voice-speak-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .voice-transcript {
+    max-width: 640px;
+    text-align: center;
+    font-size: 1.02rem;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.92);
+    min-height: 1.6em;
+    padding: 0 12px;
+    margin-top: 18px;
+  }
+
+  .voice-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    width: 100%;
+  }
+  .voice-ctrl-btn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    display: grid; place-items: center;
+    cursor: pointer;
+  }
+  .voice-ctrl-btn:hover { background: rgba(255,255,255,0.16); }
+  .voice-ctrl-btn svg { width: 22px; height: 22px; }
+  .voice-ctrl-btn.close-btn { background: rgba(244, 42, 65, 0.85); border-color: transparent; }
+  .voice-ctrl-btn.close-btn:hover { background: var(--red); }
+  .voice-ctrl-btn.muted { background: rgba(244, 42, 65, 0.85); border-color: transparent; }
   </style>
 </head>
 <body>
@@ -407,8 +486,6 @@
 
     <main id="messages" class="messages" aria-live="polite"></main>
 
-    <div id="mic-status" class="mic-status" aria-live="polite"></div>
-
     <form id="chat-form" class="composer">
       <textarea
         id="question-input"
@@ -416,15 +493,12 @@
         placeholder="আপনার প্রশ্ন লিখুন..."
         rows="1"
       ></textarea>
-      <button id="mic-btn" class="mic-btn" type="button" aria-label="ভয়েস ইনপুট" title="কথা বলে প্রশ্ন করুন">
+      <button id="mic-btn" class="mic-btn" type="button" aria-label="ভয়েস মোড" title="ভয়েস মোড শুরু করুন">
         <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
           <line x1="12" y1="19" x2="12" y2="23"></line>
           <line x1="8" y1="23" x2="16" y2="23"></line>
-        </svg>
-        <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <rect x="6" y="6" width="12" height="12" rx="2"></rect>
         </svg>
       </button>
       <button id="send-btn" class="send-btn" type="submit" aria-label="Send">
@@ -434,6 +508,32 @@
         </svg>
       </button>
     </form>
+  </div>
+
+  <div id="voice-overlay" class="voice-overlay" hidden>
+    <div class="voice-top">
+      <div id="voice-status" class="voice-status">মাইক্রোফোন প্রস্তুত করা হচ্ছে…</div>
+    </div>
+    <div class="voice-orb-wrap">
+      <div id="voice-orb" class="voice-orb"></div>
+    </div>
+    <div id="voice-transcript" class="voice-transcript"></div>
+    <div class="voice-controls">
+      <button id="voice-mute-btn" class="voice-ctrl-btn" type="button" aria-label="মিউট">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+      </button>
+      <button id="voice-close-btn" class="voice-ctrl-btn close-btn" type="button" aria-label="বন্ধ করুন">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
@@ -564,7 +664,6 @@
   const sendBtn = document.getElementById('send-btn');
   const resetBtn = document.getElementById('reset-btn');
   const micBtn = document.getElementById('mic-btn');
-  const micStatus = document.getElementById('mic-status');
 
   let sessionId = localStorage.getItem('ec_faq_session_id') || null;
   let busy = false;
@@ -657,6 +756,7 @@
     let firstTokenAt = null;
     let answerRaw = '';
     let failed = false;
+    let finalReply = '';
 
     const handle = (ev) => {
       const wasNear = nearBottom();
@@ -756,6 +856,7 @@
             answerRaw = ev.reply || '(কোনো উত্তর পাওয়া যায়নি)';
             renderAnswer(answerEl, answerRaw);
           }
+          finalReply = ev.reply || answerRaw;
 
           const total = performance.now() - startedAt;
           const timing = el('div', 'timing', bubble);
@@ -841,6 +942,8 @@
       if (failed) addRetryButton(bubble, text);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    return { text: finalReply, failed };
   }
 
   async function submit() {
@@ -914,23 +1017,14 @@
     }, 250);
   });
 
-  /* ---------------------------------------------------------- voice input */
-
-  let recorder = null;
-  let recordedChunks = [];
-  let recordingStream = null;
-
-  function setMicStatus(text, isError) {
-    micStatus.textContent = text || '';
-    micStatus.classList.toggle('error', !!isError);
-  }
-
-  function stopRecordingStream() {
-    if (recordingStream) {
-      recordingStream.getTracks().forEach((t) => t.stop());
-      recordingStream = null;
-    }
-  }
+  /* ------------------------------------------------------- voice mode -- */
+  /*
+   * A ChatGPT-style full-screen voice mode: tapping the mic button opens an
+   * overlay that listens continuously, auto-detects when the user stops
+   * talking (via a Web Audio analyser, not a manual stop button), sends the
+   * transcript through the normal chat pipeline, then speaks the reply back
+   * via TTS and starts listening again -- a hands-free loop until closed.
+   */
 
   async function transcribe(blob) {
     /*
@@ -941,6 +1035,7 @@
     const form = new FormData();
     const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
     form.append('file', blob, 'recording.' + ext);
+    form.append('model_type', 'zipformer');
 
     const res = await fetch(API_BASE + '/asr/upload', {
       method: 'POST',
@@ -953,88 +1048,517 @@
     return ((data.output && data.output[0] && data.output[0].source) || '').trim();
   }
 
-  async function startRecording() {
-    if (!navigator.mediaDevices || !window.MediaRecorder) {
-      setMicStatus('এই ব্রাউজারে ভয়েস রেকর্ডিং সমর্থিত নয়।', true);
-      return;
-    }
-    try {
-      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      // Permission denied, or no microphone available.
-      setMicStatus('মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি।', true);
-      return;
-    }
+  /*
+   * Number/domain-to-words conversion for speech.
+   *
+   * The LLM is deliberately left free to write digits (asking it to spell
+   * numbers out itself was tried and reverted -- it reliably gets the VALUE
+   * right with digits, but occasionally hallucinates non-Bangla fragments
+   * (e.g. Cyrillic) when asked to spell tricky numbers like 115 as words).
+   * Converting digits to words here instead is deterministic: same input,
+   * same output, no model involved, so there's nothing for it to get wrong.
+   */
 
-    recordedChunks = [];
-    // Let the browser pick its own container; Safari records mp4, Chrome webm.
-    // The ASR service accepts both, so no conversion is needed.
-    try {
-      recorder = new MediaRecorder(recordingStream);
-    } catch (err) {
-      stopRecordingStream();
-      setMicStatus('রেকর্ডিং শুরু করা যায়নি।', true);
-      return;
-    }
+  const BN_DIGIT_MAP = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9' };
+  const normalizeDigits = (s) => s.replace(/[০-৯]/g, (d) => BN_DIGIT_MAP[d]);
 
-    recorder.addEventListener('dataavailable', (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  // Bangla has a distinct word for every number 0-99 (not composed from
+  // tens+ones like English), so this has to be a full lookup table.
+  const BN_TWO_DIGIT = [
+    'শূন্য', 'এক', 'দুই', 'তিন', 'চার', 'পাঁচ', 'ছয়', 'সাত', 'আট', 'নয়', 'দশ',
+    'এগারো', 'বারো', 'তেরো', 'চৌদ্দ', 'পনেরো', 'ষোলো', 'সতেরো', 'আঠারো', 'উনিশ', 'বিশ',
+    'একুশ', 'বাইশ', 'তেইশ', 'চব্বিশ', 'পঁচিশ', 'ছাব্বিশ', 'সাতাশ', 'আটাশ', 'ঊনত্রিশ', 'ত্রিশ',
+    'একত্রিশ', 'বত্রিশ', 'তেত্রিশ', 'চৌত্রিশ', 'পঁয়ত্রিশ', 'ছত্রিশ', 'সাঁইত্রিশ', 'আটত্রিশ', 'ঊনচল্লিশ', 'চল্লিশ',
+    'একচল্লিশ', 'বিয়াল্লিশ', 'তেতাল্লিশ', 'চুয়াল্লিশ', 'পঁয়তাল্লিশ', 'ছেচল্লিশ', 'সাতচল্লিশ', 'আটচল্লিশ', 'ঊনপঞ্চাশ', 'পঞ্চাশ',
+    'একান্ন', 'বাহান্ন', 'তিপ্পান্ন', 'চুয়ান্ন', 'পঞ্চান্ন', 'ছাপ্পান্ন', 'সাতান্ন', 'আটান্ন', 'ঊনষাট', 'ষাট',
+    'একষট্টি', 'বাষট্টি', 'তেষট্টি', 'চৌষট্টি', 'পঁয়ষট্টি', 'ছেষট্টি', 'সাতষট্টি', 'আটষট্টি', 'ঊনসত্তর', 'সত্তর',
+    'একাত্তর', 'বাহাত্তর', 'তিয়াত্তর', 'চুয়াত্তর', 'পঁচাত্তর', 'ছিয়াত্তর', 'সাতাত্তর', 'আটাত্তর', 'ঊনআশি', 'আশি',
+    'একাশি', 'বিরাশি', 'তিরাশি', 'চুরাশি', 'পঁচাশি', 'ছিয়াশি', 'সাতাশি', 'আটাশি', 'ঊননব্বই', 'নব্বই',
+    'একানব্বই', 'বিরানব্বই', 'তিরানব্বই', 'চুরানব্বই', 'পঁচানব্বই', 'ছিয়ানব্বই', 'সাতানব্বই', 'আটানব্বই', 'নিরানব্বই',
+  ];
+
+  function banglaHundredsToWords(n) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    let out = '';
+    if (h > 0) out += BN_TWO_DIGIT[h] + 'শ' + (r > 0 ? ' ' : '');
+    if (r > 0) out += BN_TWO_DIGIT[r];
+    return out.trim();
+  }
+
+  // Bangla groups digits as crore/lakh/thousand/hundred (2-2-2-3), not the
+  // Western 3-3-3 (million/billion) grouping.
+  function numberToBanglaWords(n) {
+    if (n === 0) return 'শূন্য';
+    if (n < 0) return 'ঋণাত্মক ' + numberToBanglaWords(-n);
+    const parts = [];
+    const crore = Math.floor(n / 1e7); n %= 1e7;
+    const lakh = Math.floor(n / 1e5); n %= 1e5;
+    const thousand = Math.floor(n / 1e3); n %= 1e3;
+    if (crore) parts.push(BN_TWO_DIGIT[crore] + ' কোটি');
+    if (lakh) parts.push(BN_TWO_DIGIT[lakh] + ' লক্ষ');
+    if (thousand) parts.push(BN_TWO_DIGIT[thousand] + ' হাজার');
+    if (n) parts.push(banglaHundredsToWords(n));
+    return parts.join(' ').trim();
+  }
+
+  const BN_ORDINAL = [
+    '', 'প্রথম', 'দ্বিতীয়', 'তৃতীয়', 'চতুর্থ', 'পঞ্চম', 'ষষ্ঠ', 'সপ্তম', 'অষ্টম', 'নবম', 'দশম',
+    'একাদশ', 'দ্বাদশ', 'ত্রয়োদশ', 'চতুর্দশ', 'পঞ্চদশ', 'ষোড়শ', 'সপ্তদশ', 'অষ্টাদশ', 'ঊনবিংশ', 'বিংশ',
+  ];
+  const banglaOrdinalWord = (n) => (n >= 1 && n < BN_ORDINAL.length ? BN_ORDINAL[n] : numberToBanglaWords(n) + 'তম');
+
+  // Days of the month: 1st-4th are irregular idioms, 5th+ is regular
+  // (cardinal word + whichever suffix -ই/-শে the source text already used).
+  const BN_DATE_ORDINAL_SPECIAL = { 1: 'পয়লা', 2: 'দোসরা', 3: 'তেসরা', 4: 'চৌঠা' };
+  function banglaDateOrdinalWord(n, suffix) {
+    if (BN_DATE_ORDINAL_SPECIAL[n]) return BN_DATE_ORDINAL_SPECIAL[n];
+    const word = numberToBanglaWords(n);
+    // e.g. পঁচিশ + শে would double the শ (পঁচিশশে) -- the real word elides
+    // it to পঁচিশে, same for ত্রিশে/বিশে etc.
+    if (suffix === 'শে' && word.endsWith('শ')) return word + 'ে';
+    return word + suffix;
+  }
+
+  const EN_ORDINAL = [
+    '', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+    'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth',
+  ];
+  const englishOrdinalWord = (n) => (n >= 1 && n < EN_ORDINAL.length ? EN_ORDINAL[n] : n + 'th');
+
+  // Long digit runs (NID numbers, mobile numbers) or anything near "নম্বর
+  // /কল/হেল্পলাইন" read as a magnitude would be nonsense -- read digit by
+  // digit instead, same convention as a phone number in any language.
+  function digitByDigit(digits) {
+    return normalizeDigits(digits).split('').map((d) => BN_TWO_DIGIT[+d]).join(' ');
+  }
+
+  const EN_DIGIT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const digitByDigitEnglish = (digits) => digits.split('').map((d) => EN_DIGIT_WORDS[+d]).join(' ');
+
+  function convertNumbersForSpeech(text) {
+    let out = text;
+
+    // Known domain the FAQ data repeats often; give it a clean phonetic
+    // reading instead of leaving Latin letters for the Bangla voice model.
+    out = out.replace(/services\.nidw\.gov\.bd/gi, 'সার্ভিসেস ডট এনআইডিডাব্লিউ ডট গভ ডট বিডি');
+    // Any other bare domain-looking token: break it on the dots so it isn't
+    // read as one long run-on word.
+    out = out.replace(/\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+\b/g, (m) => m.split('.').join(' ডট '));
+
+    // Date ordinals: digits directly followed by -লা/-রা/-শে/-ঠা/-ই.
+    out = out.replace(/([০-৯]+|\d+)(লা|রা|শে|ঠা|ই)/g, (m, num, suffix) =>
+      banglaDateOrdinalWord(parseInt(normalizeDigits(num), 10), suffix)
+    );
+    // General ordinals: ১ম, ২য়, ৩য়, ৪র্থ, ৫ম, ৬ষ্ঠ, ...
+    out = out.replace(/([০-৯]+|\d+)(ম|য়|র্থ|ষ্ঠ)/g, (m, num) =>
+      banglaOrdinalWord(parseInt(normalizeDigits(num), 10))
+    );
+    // English ordinals: 1st, 2nd, 3rd, 4th, ...
+    out = out.replace(/\b(\d+)(st|nd|rd|th)\b/gi, (m, num) => englishOrdinalWord(parseInt(num, 10)));
+
+    // Helpline/ID-style numbers: long runs, or short runs next to a word
+    // like "নম্বর"/"কল"/"call"/"number" -- read digit by digit (like a real
+    // phone number in any language), not as one big magnitude.
+    out = out.replace(/([০-৯]{6,}|\d{6,})/g, (m) => digitByDigit(m));
+    out = out.replace(/(নম্বর|নম্বরে|নম্বরটি|কল করে|কল করুন|হেল্পলাইন|হটলাইন)\s*([০-৯]+|\d+)/g, (m, label, num) =>
+      label + ' ' + digitByDigit(num)
+    );
+    out = out.replace(/([০-৯]+|\d+)\s*(নম্বরে|নম্বরটি|নম্বর)/g, (m, num, label) => digitByDigit(num) + ' ' + label);
+    out = out.replace(/\b(call|number|helpline|hotline|dial)\b\s*:?\s*([0-9]+)/gi, (m, label, num) =>
+      label + ' ' + digitByDigitEnglish(num)
+    );
+    out = out.replace(/\b([0-9]+)\s*(?=is the (?:number|helpline|hotline))/gi, (m, num) => digitByDigitEnglish(num) + ' ');
+
+    // Whatever plain digit runs remain: read as a normal magnitude (fees,
+    // ages, years, quantities).
+    out = out.replace(/[০-৯]+|\d+/g, (m) => numberToBanglaWords(parseInt(normalizeDigits(m), 10)));
+
+    return out;
+  }
+
+  // Strip markdown noise before handing text to TTS, so the voice doesn't
+  // read out asterisks, hashes, or link syntax.
+  function stripMarkdownForSpeech(text) {
+    const plain = text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[#*_>~]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return convertNumbersForSpeech(plain);
+  }
+
+  async function synthesizeSpeech(text) {
+    /*
+     * Goes through our own backend (POST /api/v1/tts), not the TTS service's
+     * /v1/audio/speech directly -- that service has no CORS support, so a UI
+     * hosted on a different origin (e.g. Vercel) would have the browser
+     * block the request. Our backend forwards it and inherits its own
+     * CORSMiddleware instead.
+     */
+    const res = await fetch(API_BASE + '/api/v1/tts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify({
+        input: stripMarkdownForSpeech(text).slice(0, 1000),
+        voice: 'Aditi',
+        response_format: 'wav',
+      }),
     });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    if (!blob.size) throw new Error('empty TTS response');
+    return URL.createObjectURL(blob);
+  }
 
-    // Captured now: stopRecording() clears `recorder` synchronously, so the
-    // async 'stop' handler below cannot read anything off it.
-    const recordedMimeType = recorder.mimeType;
+  const voiceOverlay = document.getElementById('voice-overlay');
+  const voiceOrb = document.getElementById('voice-orb');
+  const voiceStatus = document.getElementById('voice-status');
+  const voiceTranscript = document.getElementById('voice-transcript');
+  const voiceMuteBtn = document.getElementById('voice-mute-btn');
+  const voiceCloseBtn = document.getElementById('voice-close-btn');
 
-    recorder.addEventListener('stop', async () => {
-      stopRecordingStream();
-      micBtn.classList.remove('recording');
-      const blob = new Blob(recordedChunks, { type: recordedMimeType });
+  const VoiceMode = {
+    active: false,
+    muted: false,
+    stream: null,
+    audioCtx: null,
+    analyser: null,
+    levelRaf: null,
+    recorder: null,
+    chunks: [],
+    silenceTimer: null,
+    maxDurationTimer: null,
+    speechStarted: false,
+    playerEl: null,
+    speaking: false,
+    speakingStartedAt: 0,
+    interruptPlayback: null,
+    generation: 0, // bumped on close, so in-flight async work becomes a no-op
 
-      if (!blob.size) {
-        setMicStatus('কোনো অডিও রেকর্ড হয়নি।', true);
+    setStatus(text) {
+      voiceStatus.textContent = text || '';
+    },
+
+    setOrbState(state) {
+      voiceOrb.classList.remove('thinking', 'speaking', 'error');
+      if (state) voiceOrb.classList.add(state);
+      voiceOrb.style.transform = '';
+    },
+
+    async open() {
+      if (this.active) return;
+      this.active = true;
+      this.generation += 1;
+      voiceOverlay.hidden = false;
+      voiceTranscript.textContent = '';
+      this.setOrbState(null);
+      this.setStatus('মাইক্রোফোন প্রস্তুত করা হচ্ছে…');
+
+      /*
+       * "Unlock" audio playback while still inside the click handler's user
+       * gesture: browsers grant autoplay permission to a media element only
+       * around a gesture, but by the time a TTS reply is ready several
+       * network round-trips later, that window has long closed. A media
+       * element that has already started playing once (even silence, here)
+       * keeps its autoplay eligibility for later .play() calls on the same
+       * element, so this is created and started synchronously, before the
+       * getUserMedia await below spends the gesture.
+       */
+      if (!this.playerEl) this.playerEl = new Audio();
+      const SILENT_WAV =
+        'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      this.playerEl.src = SILENT_WAV;
+      this.playerEl.play().catch(() => {});
+
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        this.setOrbState('error');
+        this.setStatus('এই ব্রাউজারে ভয়েস মোড সমর্থিত নয়।');
         return;
       }
 
-      micBtn.disabled = true;
-      setMicStatus('কথা লেখায় রূপান্তর করা হচ্ছে…');
       try {
-        const text = await transcribe(blob);
-        if (!text) {
-          setMicStatus('কিছু শোনা যায়নি, আবার চেষ্টা করুন।', true);
-          return;
-        }
-        // Put the transcript in the box rather than sending it blind, so a
-        // misheard word can be corrected before asking.
-        inputEl.value = text;
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        inputEl.focus();
-        setMicStatus('');
+        // Echo cancellation matters here specifically because the mic stays
+        // live while the bot's own reply plays out of the speaker (see
+        // listen()'s barge-in handling below) -- without it, the bot's own
+        // voice leaking back into the mic would trip the barge-in detector.
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
       } catch (err) {
-        setMicStatus('রূপান্তর ব্যর্থ হয়েছে, আবার চেষ্টা করুন।', true);
-      } finally {
-        micBtn.disabled = false;
+        this.setOrbState('error');
+        this.setStatus('মাইক্রোফোন ব্যবহারের অনুমতি পাওয়া যায়নি।');
+        return;
       }
-    });
 
-    recorder.start();
-    micBtn.classList.add('recording');
-    micBtn.setAttribute('aria-label', 'রেকর্ডিং বন্ধ করুন');
-    setMicStatus('শুনছি… বলা শেষ হলে আবার চাপুন।');
-  }
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = this.audioCtx.createMediaStreamSource(this.stream);
+      this.analyser = this.audioCtx.createAnalyser();
+      this.analyser.fftSize = 512;
+      source.connect(this.analyser);
 
-  function stopRecording() {
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
-    recorder = null;
-    micBtn.setAttribute('aria-label', 'ভয়েস ইনপুট');
-  }
+      this.listen();
+    },
 
-  micBtn.addEventListener('click', () => {
-    if (micBtn.classList.contains('recording')) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  });
+    close() {
+      if (!this.active) return;
+      this.active = false;
+      this.generation += 1;
+
+      clearTimeout(this.silenceTimer);
+      clearTimeout(this.maxDurationTimer);
+      if (this.levelRaf) cancelAnimationFrame(this.levelRaf);
+
+      if (this.recorder && this.recorder.state !== 'inactive') {
+        try { this.recorder.stop(); } catch (e) {}
+      }
+      this.recorder = null;
+
+      if (this.playerEl) {
+        this.playerEl.pause();
+      }
+      this.speaking = false;
+      this.interruptPlayback = null;
+
+      if (this.stream) {
+        this.stream.getTracks().forEach((t) => t.stop());
+        this.stream = null;
+      }
+      if (this.audioCtx) {
+        this.audioCtx.close().catch(() => {});
+        this.audioCtx = null;
+      }
+
+      voiceOverlay.hidden = true;
+    },
+
+    toggleMute() {
+      this.muted = !this.muted;
+      voiceMuteBtn.classList.toggle('muted', this.muted);
+      if (this.muted && this.recorder && this.recorder.state === 'recording') {
+        this.recorder.stop();
+      } else if (!this.muted && this.active && (!this.recorder || this.recorder.state !== 'recording')) {
+        this.listen();
+      }
+      this.setStatus(this.muted ? 'মাইক্রোফোন বন্ধ আছে' : '');
+    },
+
+    // Continuously watches mic input level: waits for speech to start, then
+    // auto-stops once the user has gone quiet for a beat.
+    listen() {
+      if (!this.active || this.muted) return;
+      const myGen = this.generation;
+
+      this.chunks = [];
+      this.speechStarted = false;
+      let recorder;
+      try {
+        recorder = new MediaRecorder(this.stream);
+      } catch (err) {
+        this.setOrbState('error');
+        this.setStatus('রেকর্ডিং শুরু করা যায়নি।');
+        return;
+      }
+      this.recorder = recorder;
+      const mimeType = recorder.mimeType;
+
+      recorder.addEventListener('dataavailable', (e) => {
+        if (e.data && e.data.size > 0) this.chunks.push(e.data);
+      });
+
+      recorder.addEventListener('stop', () => {
+        if (myGen !== this.generation) return;
+        clearTimeout(this.silenceTimer);
+        clearTimeout(this.maxDurationTimer);
+        if (this.levelRaf) cancelAnimationFrame(this.levelRaf);
+        const blob = new Blob(this.chunks, { type: mimeType });
+        if (blob.size > 300 && this.speechStarted) {
+          this.handleUtterance(blob, myGen);
+        } else if (this.active && !this.muted) {
+          this.listen(); // false start (silence-only clip) -- keep listening
+        }
+      });
+
+      recorder.start();
+      this.setOrbState(null);
+      this.setStatus('শুনছি…');
+
+      const SPEECH_THRESHOLD = 0.035;
+      // Higher bar + a grace window for interrupting the bot's own reply:
+      // echoCancellation suppresses most speaker-to-mic leakage, but not
+      // perfectly (e.g. no headset, external speakers), so barge-in needs to
+      // be more conservative than normal listening to avoid the bot cutting
+      // itself off on its own voice.
+      const BARGE_IN_THRESHOLD = 0.09;
+      const BARGE_IN_GRACE_MS = 400;
+      const SILENCE_MS = 1200;
+      const MAX_UTTERANCE_MS = 20000;
+      const data = new Uint8Array(this.analyser.fftSize);
+
+      this.maxDurationTimer = setTimeout(() => {
+        if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
+      }, MAX_UTTERANCE_MS);
+
+      const tick = () => {
+        if (myGen !== this.generation || !this.recorder || this.recorder.state !== 'recording') return;
+        this.analyser.getByteTimeDomainData(data);
+        let sumSquares = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sumSquares += v * v;
+        }
+        const level = Math.sqrt(sumSquares / data.length);
+        voiceOrb.style.transform = 'scale(' + (1 + Math.min(level * 3, 0.35)) + ')';
+
+        const loud = this.speaking
+          ? level > BARGE_IN_THRESHOLD &&
+            performance.now() - this.speakingStartedAt > BARGE_IN_GRACE_MS
+          : level > SPEECH_THRESHOLD;
+
+        if (loud) {
+          if (this.speaking && this.interruptPlayback) {
+            this.interruptPlayback();
+            this.interruptPlayback = null;
+            this.setOrbState(null);
+            this.setStatus('শুনছি…');
+          }
+          this.speechStarted = true;
+          clearTimeout(this.silenceTimer);
+          this.silenceTimer = setTimeout(() => {
+            if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
+          }, SILENCE_MS);
+        }
+
+        this.levelRaf = requestAnimationFrame(tick);
+      };
+      this.levelRaf = requestAnimationFrame(tick);
+    },
+
+    async handleUtterance(blob, myGen) {
+      this.setOrbState('thinking');
+      this.setStatus('শুনছি থেকে লিখছে…');
+      let text = '';
+      try {
+        text = await transcribe(blob);
+      } catch (err) {
+        if (myGen !== this.generation) return;
+        this.setOrbState('error');
+        this.setStatus('রূপান্তর ব্যর্থ হয়েছে, আবার চেষ্টা করুন।');
+        setTimeout(() => { if (this.active) this.listen(); }, 1500);
+        return;
+      }
+      if (myGen !== this.generation) return;
+
+      if (!text) {
+        this.setStatus('কিছু শোনা যায়নি, আবার বলুন।');
+        this.listen();
+        return;
+      }
+
+      voiceTranscript.textContent = text;
+      addUserMessage(text);
+      this.setOrbState('thinking');
+      this.setStatus('ভাবছে…');
+
+      let result;
+      try {
+        result = await ask(text);
+      } catch (err) {
+        result = { text: '', failed: true };
+      }
+      if (myGen !== this.generation) return;
+
+      if (!result || result.failed || !result.text) {
+        this.setOrbState('error');
+        this.setStatus('উত্তর তৈরি করা যায়নি, আবার চেষ্টা করুন।');
+        setTimeout(() => { if (this.active) this.listen(); }, 1500);
+        return;
+      }
+
+      voiceTranscript.textContent = result.text.length > 220
+        ? result.text.slice(0, 220) + '…'
+        : result.text;
+      this.setOrbState('thinking');
+      this.setStatus('কণ্ঠস্বর তৈরি করা হচ্ছে…');
+
+      let audioUrl;
+      try {
+        audioUrl = await synthesizeSpeech(result.text);
+      } catch (err) {
+        if (myGen !== this.generation) return;
+        // TTS failed (e.g. the voice server is out of GPU memory) -- still
+        // move on and keep the conversation going by text.
+        this.setOrbState('error');
+        this.setStatus('কণ্ঠস্বর তৈরি ব্যর্থ হয়েছে, লেখায় উত্তর দেখুন।');
+        setTimeout(() => { if (this.active) this.listen(); }, 1500);
+        return;
+      }
+      if (myGen !== this.generation) return;
+
+      this.setOrbState('speaking');
+      this.setStatus('বলছে… (থামাতে কথা বলুন)');
+      this.speaking = true;
+      this.speakingStartedAt = performance.now();
+      const audio = this.playerEl;
+      audio.src = audioUrl;
+
+      const cleanupAudio = () => {
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+        URL.revokeObjectURL(audioUrl);
+        this.speaking = false;
+        this.interruptPlayback = null;
+      };
+      const onEnded = () => {
+        cleanupAudio();
+        if (myGen !== this.generation) return;
+        this.setOrbState(null);
+        this.setStatus('শুনছি…');
+        // Safety net: listen() should already be running (started below,
+        // concurrently with playback), but restart it if it somehow died.
+        if (!this.recorder || this.recorder.state !== 'recording') this.listen();
+      };
+      const onError = () => {
+        cleanupAudio();
+        if (myGen !== this.generation) return;
+        this.setOrbState('error');
+        this.setStatus('অডিও চালানো সম্ভব হয়নি।');
+        if (!this.recorder || this.recorder.state !== 'recording') this.listen();
+      };
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
+      // Exposed so listen()'s tick loop can cut the reply off the instant it
+      // detects the user talking over it.
+      this.interruptPlayback = () => {
+        audio.pause();
+        cleanupAudio();
+      };
+
+      /*
+       * Start listening immediately, concurrently with playback, instead of
+       * waiting for the reply to finish -- this is what makes barge-in
+       * possible at all. Without it the mic is simply off while the bot
+       * talks and there is nothing to interrupt with.
+       */
+      this.listen();
+
+      try {
+        await audio.play();
+      } catch (err) {
+        onError();
+      }
+    },
+  };
+
+  micBtn.addEventListener('click', () => VoiceMode.open());
+  voiceCloseBtn.addEventListener('click', () => VoiceMode.close());
+  voiceMuteBtn.addEventListener('click', () => VoiceMode.toggleMute());
 
   resetBtn.addEventListener('click', async () => {
     if (sessionId) {
