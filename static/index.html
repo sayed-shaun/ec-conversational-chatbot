@@ -1037,7 +1037,7 @@
     form.append('file', blob, 'recording.' + ext);
     form.append('model_type', 'zipformer');
 
-    const res = await fetch(API_BASE + '/asr/upload', {
+    const res = await fetch(API_BASE + '/asr', {
       method: 'POST',
       headers: { 'ngrok-skip-browser-warning': 'true' },
       body: form,

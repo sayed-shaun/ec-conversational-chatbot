@@ -49,3 +49,9 @@ class TtsRequest(BaseModel):
     input: str
     voice: str = "Aditi"
     response_format: str = "wav"
+
+
+class AsrResponse(BaseModel):
+    """Transcript of one uploaded clip."""
+
+    text: str

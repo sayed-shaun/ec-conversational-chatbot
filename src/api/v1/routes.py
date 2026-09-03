@@ -9,10 +9,11 @@ import json
 import uuid
 
 import httpx
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
 from src.api.v1.schemas import (
+    AsrResponse,
     ChatRequest,
     ChatResponse,
     ResetRequest,
@@ -20,7 +21,7 @@ from src.api.v1.schemas import (
     TtsRequest,
 )
 from src.chatbot.chat import Chat
-from src.chatbot.client import tts_client
+from src.chatbot.client import asr_client, tts_client
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -82,6 +83,34 @@ async def reset(req: ResetRequest) -> ResetResponse:
     logger.info("session reset session=%s", session_id)
 
     return ResetResponse(session_id=session_id)
+
+
+@router.post("/asr", response_model=AsrResponse)
+async def asr(file: UploadFile = File(...)) -> AsrResponse:
+    """Transcribe one uploaded clip, server-side.
+
+    The speech-in half of the voice path; POST /tts below is speech-out. Both
+    are proxied for the same reason -- the browser holds a MediaRecorder Blob
+    and should talk to one origin, and the model host stays internal.
+
+    Errors mirror /tts: 502 for a failing or unreachable service, so a caller
+    can tell "the model said no" apart from "the model is not there".
+    """
+    audio = await file.read()
+    if not audio:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    try:
+        text = await asr_client.transcribe(audio, file.filename or "audio.webm")
+    except httpx.HTTPStatusError as exc:
+        logger.warning("ASR service returned %s", exc.response.status_code)
+        raise HTTPException(status_code=502, detail="ASR service error") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("ASR service unreachable: %s", exc)
+        raise HTTPException(status_code=502, detail="ASR service unreachable") from exc
+
+    logger.info("transcribed %d bytes -> %d chars", len(audio), len(text))
+    return AsrResponse(text=text)
 
 
 @router.post("/tts")

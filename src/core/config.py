@@ -82,6 +82,20 @@ class ChatbotSettings(BaseSettings):
         ),
     )
 
+    ASR_URL: str = Field(
+        default="http://localhost:8005",
+        description=(
+            "Base URL of the Bengali ASR gateway. Proxied server-side via "
+            "POST /api/v1/asr for the same CORS reason as TTS_URL, and so "
+            "the browser never needs to know where the model server lives."
+        ),
+    )
+
+    ASR_TIMEOUT: float = Field(
+        default=60.0,
+        description="Timeout in seconds for transcription requests to ASR_URL.",
+    )
+
     CORS_ALLOW_ORIGINS: str = Field(
         default="*",
         description=(

@@ -136,6 +136,36 @@ class McpClient:
         return await self.call_tool("search_faq", arguments)
 
 
+class AsrClient:
+    """Sends audio to the Bengali ASR service and returns the transcript.
+
+    The mirror image of TtsClient below: proxied through this app so the
+    browser talks to one origin, and so the ASR host stays an internal
+    detail. Multipart upload rather than the base64 JSON route, because the
+    browser already holds a Blob from MediaRecorder.
+    """
+
+    def __init__(self, base_url: str, timeout: float = 60.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
+        """Return the transcript for one clip. Raises httpx errors on failure.
+
+        Uses the service's OpenAI-compatible /v1/audio/transcriptions, which
+        already joins its internal segments into one utterance -- the same
+        shape TtsClient's /v1/audio/speech uses, so both halves of the voice
+        path speak one API.
+        """
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/v1/audio/transcriptions",
+                files={"file": (filename, audio, "application/octet-stream")},
+            )
+            resp.raise_for_status()
+            return resp.json().get("text", "")
+
+
 class TtsClient:
     """Forwards speech-synthesis requests to the TTS service server-side.
 
@@ -166,5 +196,6 @@ class TtsClient:
 
 
 openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
+asr_client = AsrClient(settings.ASR_URL, settings.ASR_TIMEOUT)
 mcp_client = McpClient(settings.MCP_SERVER_URL)
 tts_client = TtsClient(settings.TTS_URL)
