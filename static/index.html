@@ -1395,12 +1395,20 @@
       // thresholds are set higher than a bare loudness read would suggest,
       // and below they must hold for CONFIRM_MS straight (not just one
       // frame) before counting as real speech, to reject brief transients.
+      // Starting a turn and holding one open need different bars. Speech dips
+      // below any single threshold constantly -- between syllables, on unvoiced
+      // consonants, at the quiet tail of a phrase -- so requiring a fresh
+      // CONFIRM_MS streak to keep the turn alive cut people off mid-sentence.
+      // SPEECH_THRESHOLD (plus the streak) still gates the start, where noise
+      // rejection matters; once speech is under way SUSTAIN_THRESHOLD holds it
+      // open frame by frame, so only real silence ends the turn.
       const SPEECH_THRESHOLD = 0.06;
+      const SUSTAIN_THRESHOLD = 0.025;
       const BARGE_IN_THRESHOLD = 0.12;
       const CONFIRM_MS = 120;
       const BARGE_IN_GRACE_MS = 400;
-      const SILENCE_MS = 1200;
-      const MAX_UTTERANCE_MS = 20000;
+      const SILENCE_MS = 1500;
+      const MAX_UTTERANCE_MS = 45000;
       const data = new Uint8Array(this.analyser.fftSize);
       let loudStreakStart = null;
 
@@ -1430,6 +1438,11 @@
           loudStreakStart = null;
         }
         const loud = aboveThreshold && performance.now() - loudStreakStart >= CONFIRM_MS;
+        // Mid-utterance, a softer level is enough to hold the turn open. Not
+        // while this.speaking: during playback only a real barge-in counts, or
+        // the assistant's own voice would keep the mic open forever.
+        const sustaining =
+          this.speechStarted && !this.speaking && level > SUSTAIN_THRESHOLD;
 
         if (loud) {
           if (this.speaking && this.interruptPlayback) {
@@ -1439,6 +1452,9 @@
             this.setStatus('শুনছি…');
           }
           this.speechStarted = true;
+        }
+
+        if (loud || sustaining) {
           clearTimeout(this.silenceTimer);
           this.silenceTimer = setTimeout(() => {
             if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
