@@ -2,7 +2,7 @@
 	# Speech is not proxied here. Both halves go through the chatbot app --
 	# POST /api/v1/asr and /api/v1/tts -- which forward to the speech
 	# service's OpenAI-compatible routes. That keeps one origin for the
-	# browser and one place to change the model host. See ASR_URL and TTS_URL
+	# browser and one place to change the model host. See ASR_TTS_URL
 	# in src/core/config.py.
 
 	handle {

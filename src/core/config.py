@@ -42,119 +42,31 @@ class ChatbotSettings(BaseSettings):
 
     model_config = _BASE_CONFIG
 
-    LLAMA_BASE_URL: str = Field(
-        default="http://172.31.60.228:8080/v1",
-        description="Base URL of the OpenAI-compatible llama-server API.",
-    )
-    LLAMA_MODEL: str = Field(
-        default="local-model",
-        description=(
-            "Model name sent in chat-completion requests "
-            "(llama-server usually ignores it)."
-        ),
-    )
+    LLAMA_BASE_URL: str = Field(default="http://172.31.60.228:8080/v1")
+    LLAMA_MODEL: str = Field(default="local-model")
 
-    LLAMA_REASONING_EFFORT: str = Field(
-        default="",
-        description=(
-            "Passed through as reasoning_effort on chat-completion requests. "
-            "Empty leaves the model's default. 'none' suppresses most of the "
-            "thinking pass, which on a reasoning model is the bulk of the "
-            "delay between a tool result and the first answer token."
-        ),
-    )
+    LLAMA_REASONING_EFFORT: str = Field(default="")
 
-    MCP_SERVER_URL: str = Field(
-        default="http://ec-faq-mcp:9000/mcp",
-        description="Streamable HTTP endpoint of the EC FAQ MCP server.",
-    )
+    MCP_SERVER_URL: str = Field(default="http://ec-faq-mcp:9000/mcp")
 
-    TTS_URL: str = Field(
-        default="http://172.31.60.228:9300",
-        description=(
-            "Base URL of the Indic Parler Streaming TTS service. Proxied "
-            "server-side via POST /api/v1/tts rather than letting the "
-            "browser call it directly through Caddy, because that service "
-            "has no CORS support of its own -- a UI hosted on a different "
-            "origin (e.g. Vercel) would have its request blocked by the "
-            "browser otherwise. Routing it through this app's own "
-            "CORSMiddleware (CORS_ALLOW_ORIGINS) sidesteps that."
-        ),
-    )
+    ASR_TTS_URL: str = Field(default="http://172.31.60.228:8000")
 
-    ASR_URL: str = Field(
-        default="http://localhost:8005",
-        description=(
-            "Base URL of the Bengali speech service. Reached via its "
-            "OpenAI-compatible POST /v1/audio/transcriptions, and proxied "
-            "server-side through POST /api/v1/asr so the browser talks to one "
-            "origin and the model host stays internal -- the same arrangement "
-            "as TTS_URL below."
-        ),
-    )
+    ASR_TIMEOUT: float = Field(default=60.0)
 
-    ASR_TIMEOUT: float = Field(
-        default=60.0,
-        description="Timeout in seconds for transcription requests to ASR_URL.",
-    )
+    CORS_ALLOW_ORIGINS: str = Field(default="*")
 
-    CORS_ALLOW_ORIGINS: str = Field(
-        default="*",
-        description=(
-            "Comma-separated origins allowed to call this API cross-origin, "
-            "e.g. when the UI is hosted separately (Vercel) from this "
-            "backend. '*' allows any origin; fine here since no cookies or "
-            "auth headers are used."
-        ),
-    )
+    MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
+    MAX_TOOL_HOPS: int = Field(default=3, ge=1)
 
-    MAX_HISTORY_TURNS: int = Field(
-        default=12,
-        ge=1,
-        description=(
-            "How many past user+assistant turns to keep per session " "before trimming."
-        ),
-    )
-    MAX_TOOL_HOPS: int = Field(
-        default=3,
-        ge=1,
-        description="Safety cap on tool-call round-trips per single user turn.",
-    )
+    SESSION_DB_PATH: str = Field(default="/data/sessions.db")
 
-    SESSION_DB_PATH: str = Field(
-        default="/data/sessions.db",
-        description=(
-            "SQLite file holding conversation checkpoints. "
-            "Mount a volume at its directory to keep them."
-        ),
-    )
+    SESSION_TTL_MINUTES: int = Field(default=60)
+    SESSION_SWEEP_MINUTES: int = Field(default=10, ge=1)
 
-    SESSION_TTL_MINUTES: int = Field(
-        default=60,
-        description=(
-            "Clear a conversation after this many idle minutes. "
-            "0 or less keeps transcripts until reset explicitly."
-        ),
-    )
-    SESSION_SWEEP_MINUTES: int = Field(
-        default=10,
-        ge=1,
-        description="How often the background sweeper purges idle sessions.",
-    )
+    API_HOST: str = Field(default="0.0.0.0")
+    API_PORT: int = Field(default=8000)
 
-    API_HOST: str = Field(
-        default="0.0.0.0",
-        description="Interface uvicorn binds for the chatbot API.",
-    )
-    API_PORT: int = Field(
-        default=8000,
-        description="Port uvicorn binds for the chatbot API.",
-    )
-
-    STATIC_DIR: str = Field(
-        default="static",
-        description="Directory served at /static, holding the test chat UI.",
-    )
+    STATIC_DIR: str = Field(default="static")
 
 
 class McpSettings(BaseSettings):
@@ -164,66 +76,23 @@ class McpSettings(BaseSettings):
 
     TOP_SIMILAR_API_URL: str = Field(
         default="http://172.31.60.228:8002/ec_bot/top_similar/",
-        description=(
-            "POST endpoint returning top-k similar questions "
-            "with tag + cosine_similarity."
-        ),
     )
-    TOP_SIMILAR_TIMEOUT: float = Field(
-        default=10.0,
-        description="Timeout in seconds for calls to TOP_SIMILAR_API_URL.",
-    )
+    TOP_SIMILAR_TIMEOUT: float = Field(default=10.0)
 
     TAG_ANSWER_URL: str = Field(
         default=(
             "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
             "development/full_dataset/tag_answer.json"
         ),
-        description="Raw URL of the tag -> answer JSON, fetched at startup.",
     )
-    TAG_ANSWER_URL_TIMEOUT: float = Field(
-        default=15.0,
-        description="Timeout in seconds for the startup fetch of TAG_ANSWER_URL.",
-    )
-    GITHUB_TOKEN: str = Field(
-        default="",
-        description=(
-            "GitHub token for TAG_ANSWER_URL; required while the repo is private."
-        ),
-    )
-    TAG_ANSWER_PATH: str = Field(
-        default_factory=_default_tag_answer_path,
-        description="Local fallback copy of the tag -> Bengali answer JSON file.",
-    )
-    TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = Field(
-        default=True,
-        description=(
-            "If the live fetch fails, load TAG_ANSWER_PATH "
-            "instead of failing startup."
-        ),
-    )
-    TAG_ANSWER_REFRESH_SECONDS: float = Field(
-        default=0.0,
-        ge=0.0,
-        description=(
-            "Re-fetch TAG_ANSWER_URL on this interval so GitHub-side edits "
-            "reach a running server without a restart. 0 disables polling."
-        ),
-    )
-    CONFIDENCE_THRESHOLD: float = Field(
-        default=0.55,
-        ge=0.0,
-        le=1.0,
-        description="Minimum cosine_similarity for a match to be considered reliable.",
-    )
+    TAG_ANSWER_URL_TIMEOUT: float = Field(default=15.0)
+    GITHUB_TOKEN: str = Field(default="")
+    TAG_ANSWER_PATH: str = Field(default_factory=_default_tag_answer_path)
+    TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = Field(default=True)
+    TAG_ANSWER_REFRESH_SECONDS: float = Field(default=0.0, ge=0.0)
+    CONFIDENCE_THRESHOLD: float = Field(default=0.55, ge=0.0, le=1.0)
 
-    MCP_TRANSPORT: str = Field(
-        default="http",
-        description=(
-            "'http' (Streamable HTTP, for Docker/network use) "
-            "or 'stdio' (local MCP clients)."
-        ),
-    )
+    MCP_TRANSPORT: str = Field(default="http")
     MCP_HOST: str = Field(default="0.0.0.0")
     MCP_PORT: int = Field(default=9000)
     MCP_PATH: str = Field(default="/mcp")

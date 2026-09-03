@@ -170,8 +170,8 @@ class TtsClient:
     """Forwards speech-synthesis requests to the TTS service server-side.
 
     Proxied through this app rather than letting the browser call the TTS
-    host directly, since that service has no CORS support -- see TTS_URL's
-    docstring in core/config.py.
+    host directly, so the page talks to one origin and the model host stays
+    internal -- see ASR_TTS_URL's docstring in core/config.py.
     """
 
     def __init__(self, base_url: str) -> None:
@@ -196,6 +196,6 @@ class TtsClient:
 
 
 openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
-asr_client = AsrClient(settings.ASR_URL, settings.ASR_TIMEOUT)
+asr_client = AsrClient(settings.ASR_TTS_URL, settings.ASR_TIMEOUT)
 mcp_client = McpClient(settings.MCP_SERVER_URL)
-tts_client = TtsClient(settings.TTS_URL)
+tts_client = TtsClient(settings.ASR_TTS_URL)

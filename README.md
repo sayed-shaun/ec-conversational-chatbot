@@ -104,9 +104,9 @@ in a collapsible block without polluting the answer or the stored history. The
 UI renders each tool call as a chip with its arguments, result, matched tag and
 score, and shows total turn time under each answer.
 
-**Voice input**: the UI records with `MediaRecorder` and posts to `/asr/upload`;
-Caddy proxies `/asr*` to `ASR_URL`, so the browser only talks to this stack's
-own origin.
+**Voice input**: the UI records with `MediaRecorder` and posts to
+`/api/v1/asr`, which the app forwards to `ASR_TTS_URL`, so the browser only
+talks to this stack's own origin.
 
 **Load testing**: `ab`/`wrk` can't measure the SSE endpoint (they see one
 long-lived response). Use `scripts/load_test.py`:
@@ -151,7 +151,7 @@ actually touch:
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `8000` | The only port published on the host |
-| `ASR_URL` | `http://172.31.60.228:8000` | Speech-to-text behind `/asr*` |
+| `ASR_TTS_URL` | `http://172.31.60.228:8000` | Speech service for both ASR and TTS |
 
 `src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
 `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.
