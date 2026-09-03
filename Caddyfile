@@ -1,12 +1,9 @@
 :80 {
-	handle /asr* {
-		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
-	}
-
-	# TTS still goes through the chatbot app's POST /api/v1/tts rather than a
-	# proxy here. The speech service now sends its own CORS headers, so this
-	# is no longer forced -- but routing it through the app keeps one origin
-	# and one place to change. See TTS_URL in src/core/config.py.
+	# Speech is not proxied here. Both halves go through the chatbot app --
+	# POST /api/v1/asr and /api/v1/tts -- which forward to the speech
+	# service's OpenAI-compatible routes. That keeps one origin for the
+	# browser and one place to change the model host. See ASR_URL and TTS_URL
+	# in src/core/config.py.
 
 	handle {
 		reverse_proxy ec-faq-chatbot:8000 {

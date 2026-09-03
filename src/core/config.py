@@ -85,9 +85,11 @@ class ChatbotSettings(BaseSettings):
     ASR_URL: str = Field(
         default="http://localhost:8005",
         description=(
-            "Base URL of the Bengali ASR gateway. Proxied server-side via "
-            "POST /api/v1/asr for the same CORS reason as TTS_URL, and so "
-            "the browser never needs to know where the model server lives."
+            "Base URL of the Bengali speech service. Reached via its "
+            "OpenAI-compatible POST /v1/audio/transcriptions, and proxied "
+            "server-side through POST /api/v1/asr so the browser talks to one "
+            "origin and the model host stays internal -- the same arrangement "
+            "as TTS_URL below."
         ),
     )
 

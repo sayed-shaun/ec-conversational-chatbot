@@ -1028,16 +1028,16 @@
 
   async function transcribe(blob) {
     /*
-     * Caddy proxies /asr* straight to the ASR service, so this only ever
-     * talks to the same origin as the chat API -- no second URL to configure,
-     * and no mixed-content problem when the page is served over HTTPS.
+     * Goes through our own backend (POST /api/v1/asr), which forwards to the
+     * speech service's OpenAI-compatible /v1/audio/transcriptions. Same
+     * reasoning as sendTts() below: one origin for the browser, and the model
+     * host stays a server-side detail rather than something the page knows.
      */
     const form = new FormData();
     const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
     form.append('file', blob, 'recording.' + ext);
-    form.append('model_type', 'zipformer');
 
-    const res = await fetch(API_BASE + '/asr', {
+    const res = await fetch(API_BASE + '/api/v1/asr', {
       method: 'POST',
       headers: { 'ngrok-skip-browser-warning': 'true' },
       body: form,
@@ -1045,7 +1045,7 @@
     if (!res.ok) throw new Error('HTTP ' + res.status);
 
     const data = await res.json();
-    return ((data.output && data.output[0] && data.output[0].source) || '').trim();
+    return (data.text || '').trim();
   }
 
   /*

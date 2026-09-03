@@ -37,6 +37,8 @@ services:
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
+      ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
+      ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
       TTS_URL: ${TTS_URL:-http://172.31.60.228:9300}
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
@@ -62,8 +64,6 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: ec-faq-caddy
-    environment:
-      ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
