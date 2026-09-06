@@ -1236,6 +1236,11 @@
     silenceTimer: null,
     maxDurationTimer: null,
     speechStarted: false,
+    // Room noise level, in the same RMS units as the analyser reads.
+    // Lives on the object, not inside listen(), so it carries across
+    // turns instead of re-learning the room from scratch each time.
+    noiseFloor: 0.01,
+    peakLevel: 0,
     playerEl: null,
     speaking: false,
     speakingStartedAt: 0,
@@ -1288,8 +1293,17 @@
         // live while the bot's own reply plays out of the speaker (see
         // listen()'s barge-in handling below) -- without it, the bot's own
         // voice leaking back into the mic would trip the barge-in detector.
+        //
+        // The other two WebRTC processors are deliberately OFF. Both are tuned
+        // for a human listener on a call, and both hurt here:
+        //   - autoGainControl ramps over a few hundred ms, so a one-word turn
+        //     ("hi", "হ্যালো") ends before the gain has come up -- the whole
+        //     word arrives attenuated, under the speech gate below.
+        //   - noiseSuppression pumps and smears the spectrum. A person hears
+        //     that as cleaner; an acoustic model sees artefacts absent from its
+        //     training data, and word error goes up.
         this.stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
         });
       } catch (err) {
         this.setOrbState('error');
@@ -1357,6 +1371,7 @@
 
       this.chunks = [];
       this.speechStarted = false;
+      this.peakLevel = 0;
       let recorder;
       try {
         recorder = new MediaRecorder(this.stream);
@@ -1389,28 +1404,60 @@
       this.setOrbState(null);
       this.setStatus('শুনছি…');
 
-      // autoGainControl (enabled for barge-in's echo handling) amplifies
-      // quiet input, including room noise -- a threshold tuned for "any
-      // audible sound" ends up triggering on fan hum, clicks, a cough. Both
-      // thresholds are set higher than a bare loudness read would suggest,
-      // and below they must hold for CONFIRM_MS straight (not just one
-      // frame) before counting as real speech, to reject brief transients.
+      // Every bar below is a MULTIPLE of the measured room noise floor (see
+      // this.noiseFloor), not an absolute level. Fixed numbers can't work
+      // across setups: a headset in a quiet room and a laptop mic in an
+      // office differ by an order of magnitude, and one constant tuned for
+      // either deafens or false-triggers on the other. The max() floors are
+      // only a sanity bound for a pathologically silent input.
+      //
+      // Onset is two-tiered, which is what makes short words survive.
+      // Requiring one bar held for a single duration forces a trade: long
+      // enough to reject a click is longer than "hi" or "হ্যালো" spends above
+      // it, since a short word is a fast attack straight into a decay with no
+      // plateau. So a moderate level must hold for CONFIRM_MS, OR a clearly
+      // loud one for just BURST_MS -- transients are rejected by needing
+      // duration at moderate level, short words get in on amplitude instead.
+      //
       // Starting a turn and holding one open need different bars. Speech dips
-      // below any single threshold constantly -- between syllables, on unvoiced
-      // consonants, at the quiet tail of a phrase -- so requiring a fresh
-      // CONFIRM_MS streak to keep the turn alive cut people off mid-sentence.
-      // SPEECH_THRESHOLD (plus the streak) still gates the start, where noise
-      // rejection matters; once speech is under way SUSTAIN_THRESHOLD holds it
-      // open frame by frame, so only real silence ends the turn.
-      const SPEECH_THRESHOLD = 0.06;
-      const SUSTAIN_THRESHOLD = 0.025;
-      const BARGE_IN_THRESHOLD = 0.12;
-      const CONFIRM_MS = 120;
+      // low constantly -- between syllables, on unvoiced consonants, at the
+      // quiet tail of a phrase -- so once speech is under way SUSTAIN holds
+      // the turn open frame by frame, and only real silence ends it.
+      // The MIN floors are only a guard against a pathologically silent input
+      // (a muted or dead mic reading near zero, where any ratio to the noise
+      // floor is meaningless). They are deliberately far BELOW real speech:
+      // with autoGainControl off, a laptop mic at arm's length reads well
+      // under the levels an AGC-inflated signal used to show, so a MIN set
+      // from those old numbers sits above actual speech and the gate never
+      // opens at all. The noise-floor ratios do the real discrimination.
+      const SPEECH_X = 4, SPEECH_MIN = 0.008;
+      const BURST_X = 9, BURST_MIN = 0.02;
+      // Sustain is the trap. It must clear the noise floor by enough that room
+      // noise cannot hold a turn open on its own -- a bar just above the floor
+      // means every frame "sustains", the silence timer never fires, and a
+      // one-word turn runs to MAX_UTTERANCE_MS and reaches the ASR as one word
+      // plus 45s of silence (which transcribes to nothing). So it is also
+      // scaled to how loud THIS speaker actually is: PEAK_X of the loudest
+      // frame seen this turn. A quiet talker gets a proportionally quiet
+      // hangover bar, a loud one a higher bar, and neither is set by guessing
+      // an absolute level.
+      const SUSTAIN_X = 3, SUSTAIN_MIN = 0.008, SUSTAIN_PEAK_X = 0.18;
+      const BARGE_IN_X = 10, BARGE_IN_MIN = 0.025;
+      const CONFIRM_MS = 60;
+      const BURST_MS = 30;
       const BARGE_IN_GRACE_MS = 400;
-      const SILENCE_MS = 1500;
+      const SILENCE_MS = 1000;
+      // Belt and braces, independent of every threshold above: however well
+      // SUSTAIN is tuned, sustain-only frames must not be able to extend a
+      // turn indefinitely. If nothing has cleared the (much higher) speech bar
+      // for this long, the turn ends no matter what sustain thinks -- so a
+      // mistuned bar costs a slightly late cutoff, never a 45-second clip.
+      const MAX_HANGOVER_MS = 2500;
       const MAX_UTTERANCE_MS = 45000;
       const data = new Uint8Array(this.analyser.fftSize);
       let loudStreakStart = null;
+      let burstStreakStart = null;
+      let lastLoudAt = null;
 
       this.maxDurationTimer = setTimeout(() => {
         if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
@@ -1425,24 +1472,48 @@
           sumSquares += v * v;
         }
         const level = Math.sqrt(sumSquares / data.length);
+        if (level > this.peakLevel) this.peakLevel = level;
         voiceOrb.style.transform = 'scale(' + (1 + Math.min(level * 3, 0.35)) + ')';
 
-        const aboveThreshold = this.speaking
-          ? level > BARGE_IN_THRESHOLD &&
-            performance.now() - this.speakingStartedAt > BARGE_IN_GRACE_MS
-          : level > SPEECH_THRESHOLD;
-
-        if (aboveThreshold) {
-          if (loudStreakStart === null) loudStreakStart = performance.now();
-        } else {
-          loudStreakStart = null;
+        // Track the room's quiet level, asymmetrically: it falls fast (~1s) and
+        // rises very slowly (~20s), so speech barely nudges it upward while a
+        // fan switching on is still picked up eventually. Frozen once a turn is
+        // under way, and while the assistant is talking -- its own voice
+        // leaking past the echo canceller must not be learned as "the room".
+        if (!this.speechStarted && !this.speaking) {
+          const rate = level > this.noiseFloor ? 0.0008 : 0.02;
+          this.noiseFloor += (level - this.noiseFloor) * rate;
+          this.noiseFloor = Math.min(Math.max(this.noiseFloor, 0.0015), 0.05);
         }
-        const loud = aboveThreshold && performance.now() - loudStreakStart >= CONFIRM_MS;
+        const floor = this.noiseFloor;
+        const speechBar = Math.max(SPEECH_MIN, floor * SPEECH_X);
+        const burstBar = Math.max(BURST_MIN, floor * BURST_X);
+        const sustainBar = Math.max(
+          SUSTAIN_MIN, floor * SUSTAIN_X, this.peakLevel * SUSTAIN_PEAK_X
+        );
+        const bargeInBar = Math.max(BARGE_IN_MIN, floor * BARGE_IN_X);
+
+        const now = performance.now();
+        // Mid-playback, only a real barge-in counts, and only one bar applies --
+        // a short-word escape hatch there would hand the turn to the
+        // assistant's own leaked voice.
+        if (this.speaking) {
+          const over =
+            level > bargeInBar && now - this.speakingStartedAt > BARGE_IN_GRACE_MS;
+          loudStreakStart = over ? (loudStreakStart ?? now) : null;
+          burstStreakStart = null;
+        } else {
+          loudStreakStart = level > speechBar ? (loudStreakStart ?? now) : null;
+          burstStreakStart = level > burstBar ? (burstStreakStart ?? now) : null;
+        }
+        const loud =
+          (loudStreakStart !== null && now - loudStreakStart >= CONFIRM_MS) ||
+          (burstStreakStart !== null && now - burstStreakStart >= BURST_MS);
         // Mid-utterance, a softer level is enough to hold the turn open. Not
         // while this.speaking: during playback only a real barge-in counts, or
         // the assistant's own voice would keep the mic open forever.
         const sustaining =
-          this.speechStarted && !this.speaking && level > SUSTAIN_THRESHOLD;
+          this.speechStarted && !this.speaking && level > sustainBar;
 
         if (loud) {
           if (this.speaking && this.interruptPlayback) {
@@ -1452,6 +1523,16 @@
             this.setStatus('শুনছি…');
           }
           this.speechStarted = true;
+          lastLoudAt = now;
+        }
+
+        if (
+          this.speechStarted &&
+          lastLoudAt !== null &&
+          now - lastLoudAt > MAX_HANGOVER_MS
+        ) {
+          this.recorder.stop();
+          return;
         }
 
         if (loud || sustaining) {
