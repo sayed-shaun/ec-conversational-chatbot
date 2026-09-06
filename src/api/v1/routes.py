@@ -6,7 +6,9 @@ the engine.
 """
 
 import json
+import os
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile
@@ -22,6 +24,7 @@ from src.api.v1.schemas import (
 )
 from src.chatbot.chat import Chat
 from src.chatbot.client import asr_client, tts_client
+from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -110,7 +113,31 @@ async def asr(file: UploadFile = File(...)) -> AsrResponse:
         raise HTTPException(status_code=502, detail="ASR service unreachable") from exc
 
     logger.info("transcribed %d bytes -> %d chars", len(audio), len(text))
+
+    if settings.ASR_DUMP_DIR:
+        _dump_clip(audio, file.filename or "audio.webm", text)
+
     return AsrResponse(text=text)
+
+
+def _dump_clip(audio: bytes, filename: str, text: str) -> None:
+    """Write one received clip and its transcript to ASR_DUMP_DIR.
+
+    Best-effort by design: a debug aid must never be able to fail the request
+    it is instrumenting, so every error here is swallowed and logged.
+    """
+    try:
+        os.makedirs(settings.ASR_DUMP_DIR, exist_ok=True)
+        ext = os.path.splitext(filename)[1] or ".bin"
+        stem = f"{datetime.now(timezone.utc):%H%M%S}-{len(audio)}b-{len(text)}c"
+        path = os.path.join(settings.ASR_DUMP_DIR, stem + ext)
+        with open(path, "wb") as handle:
+            handle.write(audio)
+        with open(os.path.join(settings.ASR_DUMP_DIR, stem + ".txt"), "w") as handle:
+            handle.write(text)
+        logger.info("dumped clip %s", path)
+    except OSError as exc:
+        logger.warning("could not dump clip: %s", exc)
 
 
 @router.post("/tts")

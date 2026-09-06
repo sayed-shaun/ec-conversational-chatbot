@@ -63,6 +63,12 @@ class ChatbotSettings(BaseSettings):
     # one that rejects unknown form fields.
     ASR_LANGUAGE: str = Field(default="bn")
 
+    # Debug aid: when set, every clip received by /asr is written here
+    # alongside its transcript, so a failing recording can be inspected as
+    # audio rather than guessed at from a byte count. Leave empty in
+    # production -- it stores user speech.
+    ASR_DUMP_DIR: str = Field(default="")
+
     CORS_ALLOW_ORIGINS: str = Field(default="*")
 
     MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
