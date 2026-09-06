@@ -58,6 +58,8 @@
     display: flex;
     flex-direction: column;
     border-radius: 18px;
+    /* Positioning context for .jump-btn, which floats over the transcript. */
+    position: relative;
 
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(15, 40, 30, 0.05),
@@ -241,6 +243,40 @@
     opacity: 0.65;
   }
   @keyframes blink { to { visibility: hidden; } }
+
+  /*
+   * Shown only when the reader has scrolled away from the tail. Without it,
+   * breaking the auto-follow is a hidden state: new answers arrive somewhere
+   * below the fold with nothing to say so, and no one-tap way back.
+   */
+  .jump-btn {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 86px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--green-line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--green-dark);
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(15, 40, 30, 0.16);
+  }
+  .jump-btn[hidden] { display: none; }
+  .jump-btn:hover { background: var(--green-soft); }
+  .jump-btn svg { width: 14px; height: 14px; }
+  .jump-btn.unread::after {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+  }
 
   .composer {
     flex: none;
@@ -499,6 +535,14 @@
 
     <main id="messages" class="messages" aria-live="polite"></main>
 
+    <button id="jump-btn" class="jump-btn" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <polyline points="19 12 12 19 5 12"></polyline>
+      </svg>
+      সর্বশেষ বার্তায় যান
+    </button>
+
     <form id="chat-form" class="composer">
       <textarea
         id="question-input"
@@ -702,9 +746,51 @@
   const nearBottom = () =>
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 70;
 
-  function stickToBottom(wasNear) {
-    if (wasNear) messagesEl.scrollTop = messagesEl.scrollHeight;
+  /*
+   * Whether the transcript should follow new content.
+   *
+   * Every auto-scroll goes through this. They used to be unconditional
+   * `scrollTop = scrollHeight` calls scattered over the message, token and
+   * stream-end paths, so scrolling up to re-read something was undone by the
+   * next token -- the list read as though it could not be scrolled at all.
+   *
+   * Held as state rather than sampled at each call site because the useful
+   * moment to ask is when the READER last moved, not when the DOM happens to
+   * change: by the time a new row has been appended the answer is already
+   * "not near the bottom" for reasons that have nothing to do with intent.
+   */
+  let pinnedToBottom = true;
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+
+  function stickToBottom() {
+    if (pinnedToBottom) scrollToBottom();
+  }
+
+  const jumpBtn = document.getElementById('jump-btn');
+
+  function updateJumpButton() {
+    // Nothing to jump to when the transcript is too short to scroll.
+    const scrollable = messagesEl.scrollHeight > messagesEl.clientHeight + 1;
+    jumpBtn.hidden = pinnedToBottom || !scrollable;
+    if (jumpBtn.hidden) jumpBtn.classList.remove('unread');
+  }
+
+  jumpBtn.addEventListener('click', () => {
+    pinnedToBottom = true;
+    jumpBtn.classList.remove('unread');
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+    updateJumpButton();
+  });
+
+  // Programmatic scrolls fire this too, which is what keeps the flag true
+  // after scrollToBottom() and re-arms following once the reader returns.
+  messagesEl.addEventListener('scroll', () => {
+    pinnedToBottom = nearBottom();
+    updateJumpButton();
+  });
 
   function addRow(who) {
     const row = el('div', 'row ' + who, messagesEl);
@@ -712,11 +798,16 @@
     avatar.textContent = who === 'user' ? '\u{1F464}' : '\u{1F5F3}️';
     avatar.setAttribute('aria-hidden', 'true');
     const bubble = el('div', 'bubble', row);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    stickToBottom();
+    if (!pinnedToBottom) jumpBtn.classList.add('unread');
+    updateJumpButton();
     return bubble;
   }
 
   function addUserMessage(text) {
+    // Sending re-pins: someone who has just spoken or typed means to see the
+    // result, wherever they had scrolled to read.
+    pinnedToBottom = true;
     addRow('user').textContent = text;
   }
 
@@ -773,7 +864,6 @@
     let finalReply = '';
 
     const handle = (ev) => {
-      const wasNear = nearBottom();
 
       switch (ev.type) {
         case 'start':
@@ -783,8 +873,15 @@
 
         case 'reasoning':
           think.style.display = '';
-          thinkBody.textContent += ev.text;
-          thinkBody.scrollTop = thinkBody.scrollHeight;
+          {
+            // Same rule as the transcript: follow the tail only while the
+            // reader is already at it, so scrolling back through the
+            // reasoning is not undone by the next token.
+            const tailing =
+              thinkBody.scrollHeight - thinkBody.scrollTop - thinkBody.clientHeight < 30;
+            thinkBody.textContent += ev.text;
+            if (tailing) thinkBody.scrollTop = thinkBody.scrollHeight;
+          }
           /*
            * After a tool result the model runs a second thinking pass before
            * the first answer token, which is the bulk of the wait on a
@@ -891,7 +988,7 @@
         }
       }
 
-      stickToBottom(wasNear);
+      stickToBottom();
     };
 
     function collapseThinking() {
@@ -954,7 +1051,7 @@
       answerEl.classList.remove('cursor');
       if (!thinkBody.textContent.trim()) think.style.display = 'none';
       if (failed) addRetryButton(bubble, text);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      stickToBottom();
     }
 
     return { text: finalReply, failed };
@@ -1018,6 +1115,10 @@
     window.scrollTo(0, 0);
   }
 
+  // The transcript can stop being scrollable when the viewport grows, which
+  // would otherwise strand the button on screen with nothing to do.
+  window.addEventListener('resize', updateJumpButton);
+
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', syncAppHeight);
     window.visualViewport.addEventListener('scroll', syncAppHeight);
@@ -1026,9 +1127,7 @@
 
   // Keep the latest message in view when the keyboard opens over the page.
   inputEl.addEventListener('focus', () => {
-    setTimeout(() => {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }, 250);
+    setTimeout(stickToBottom, 250);
   });
 
   /* ------------------------------------------------------- voice mode -- */
