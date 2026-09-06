@@ -103,9 +103,28 @@ def create_app() -> FastAPI:
         """Convenience: bare localhost:8000 lands on the chat UI."""
         return RedirectResponse(url="/static/index.html")
 
+    class NoCacheStaticFiles(StaticFiles):
+        """StaticFiles that forbids caching of the UI.
+
+        The whole app is one hand-edited index.html served straight off a bind
+        mount, so an edit is meant to be live on reload. Without this, browsers
+        hold the previous copy and a fix looks like it did nothing -- which
+        cost real debugging time chasing a bug that had already been fixed.
+        The file is a few tens of KB from a local server; there is nothing to
+        gain by caching it.
+        """
+
+        def is_not_modified(self, *args, **kwargs) -> bool:
+            return False
+
+        async def get_response(self, path: str, scope):
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            return response
+
     application.mount(
         "/static",
-        StaticFiles(directory=settings.STATIC_DIR, html=True),
+        NoCacheStaticFiles(directory=settings.STATIC_DIR, html=True),
         name="static",
     )
 
