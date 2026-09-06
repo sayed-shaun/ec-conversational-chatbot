@@ -393,6 +393,19 @@
     text-align: center;
   }
 
+  /* Only rendered with ?vdebug=1 -- a live read of what the speech gate is
+     actually seeing, for tuning thresholds against a real mic. */
+  .voice-debug {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    opacity: 0.75;
+    margin-top: 6px;
+    white-space: pre;
+    text-align: center;
+  }
+  .voice-debug[hidden] { display: none; }
+
   .voice-orb-wrap {
     flex: 1;
     display: flex;
@@ -513,6 +526,7 @@
   <div id="voice-overlay" class="voice-overlay" hidden>
     <div class="voice-top">
       <div id="voice-status" class="voice-status">মাইক্রোফোন প্রস্তুত করা হচ্ছে…</div>
+      <div id="voice-debug" class="voice-debug" hidden></div>
     </div>
     <div class="voice-orb-wrap">
       <div id="voice-orb" class="voice-orb"></div>
@@ -1220,6 +1234,8 @@
   const voiceOverlay = document.getElementById('voice-overlay');
   const voiceOrb = document.getElementById('voice-orb');
   const voiceStatus = document.getElementById('voice-status');
+  const voiceDebug = document.getElementById('voice-debug');
+  const VOICE_DEBUG = new URLSearchParams(location.search).has('vdebug');
   const voiceTranscript = document.getElementById('voice-transcript');
   const voiceMuteBtn = document.getElementById('voice-mute-btn');
   const voiceCloseBtn = document.getElementById('voice-close-btn');
@@ -1349,6 +1365,7 @@
         this.audioCtx = null;
       }
 
+      voiceDebug.hidden = true;
       voiceOverlay.hidden = true;
     },
 
@@ -1372,6 +1389,7 @@
       this.chunks = [];
       this.speechStarted = false;
       this.peakLevel = 0;
+      if (VOICE_DEBUG) voiceDebug.hidden = false;
       let recorder;
       try {
         recorder = new MediaRecorder(this.stream);
@@ -1540,6 +1558,21 @@
           this.silenceTimer = setTimeout(() => {
             if (this.recorder && this.recorder.state === 'recording') this.recorder.stop();
           }, SILENCE_MS);
+        }
+
+        if (VOICE_DEBUG) {
+          const f = (n) => n.toFixed(4);
+          voiceDebug.textContent =
+            'rms ' + f(level) + '   peak ' + f(this.peakLevel) +
+            '   floor ' + f(floor) + '\n' +
+            'speech>' + f(speechBar) + '  burst>' + f(burstBar) +
+            '  sustain>' + f(sustainBar) + '\n' +
+            (this.speechStarted ? 'SPEECH' : 'waiting') +
+            (lastLoudAt !== null
+              ? ' +' + ((now - lastLoudAt) / 1000).toFixed(1) + 's'
+              : '') +
+            (loud ? ' loud' : '') + (sustaining ? ' sustain' : '') +
+            (this.speaking ? ' | playing (barge>' + f(bargeInBar) + ')' : '');
         }
 
         this.levelRaf = requestAnimationFrame(tick);
