@@ -136,6 +136,21 @@ class McpClient:
         return await self.call_tool("search_faq", arguments)
 
 
+_AUDIO_MIMES = {
+    "webm": "audio/webm",
+    "mp4": "audio/mp4",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+}
+
+
+def _audio_mime(filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return _AUDIO_MIMES.get(ext, "application/octet-stream")
+
+
 class AsrClient:
     """Sends audio to the Bengali ASR service and returns the transcript.
 
@@ -145,9 +160,12 @@ class AsrClient:
     browser already holds a Blob from MediaRecorder.
     """
 
-    def __init__(self, base_url: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self, base_url: str, timeout: float = 60.0, language: str = ""
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.language = language
 
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         """Return the transcript for one clip. Raises httpx errors on failure.
@@ -156,11 +174,17 @@ class AsrClient:
         already joins its internal segments into one utterance -- the same
         shape TtsClient's /v1/audio/speech uses, so both halves of the voice
         path speak one API.
+
+        Sends the audio under its real MIME type rather than a generic
+        octet-stream, so a service that dispatches its decoder on content type
+        (rather than sniffing the extension) gets the Opus path right.
         """
+        data = {"language": self.language} if self.language else None
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/audio/transcriptions",
-                files={"file": (filename, audio, "application/octet-stream")},
+                files={"file": (filename, audio, _audio_mime(filename))},
+                data=data,
             )
             resp.raise_for_status()
             return resp.json().get("text", "")

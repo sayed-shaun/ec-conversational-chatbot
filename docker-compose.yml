@@ -39,6 +39,7 @@ services:
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
       ASR_TTS_URL: ${ASR_TTS_URL:-http://172.31.60.228:8000}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
+      ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}

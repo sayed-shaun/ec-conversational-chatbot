@@ -53,6 +53,16 @@ class ChatbotSettings(BaseSettings):
 
     ASR_TIMEOUT: float = Field(default=60.0)
 
+    # Forwarded to /v1/audio/transcriptions as the OpenAI-compatible
+    # language hint, so a multilingual service does not have to guess from
+    # the leading audio -- a coin flip on the one-word clips voice mode
+    # produces. NOTE the service currently deployed ignores it: "bn", "en"
+    # and the field omitted all return byte-identical transcripts, always in
+    # Bangla script. Kept because it costs nothing and is correct for any
+    # service that does honour it. Set empty to omit the field entirely, for
+    # one that rejects unknown form fields.
+    ASR_LANGUAGE: str = Field(default="bn")
+
     CORS_ALLOW_ORIGINS: str = Field(default="*")
 
     MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
