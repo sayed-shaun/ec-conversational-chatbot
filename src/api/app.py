@@ -90,6 +90,12 @@ def create_app() -> FastAPI:
         allow_origins=origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Without this the browser hides these from JS on a cross-origin
+        # deploy (the UI on Vercel, this API elsewhere), and the streamed PCM
+        # would be played at a guessed sample rate. Response headers are not
+        # readable by default however permissive allow_headers is -- that
+        # governs the REQUEST.
+        expose_headers=["x-audio-sample-rate", "x-audio-channels", "x-audio-format"],
     )
 
     application.include_router(v1_router)

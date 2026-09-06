@@ -150,9 +150,12 @@ async def tts(req: TtsRequest) -> Response:
     app's own CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
     other.
     """
+    if req.stream:
+        return await _stream_tts(req)
+
     try:
         audio, content_type = await tts_client.synthesize(
-            req.input, req.voice, req.response_format
+            req.input, req.voice, req.response_format, req.description
         )
     except httpx.HTTPStatusError as exc:
         logger.warning("TTS service returned %s", exc.response.status_code)
@@ -162,3 +165,47 @@ async def tts(req: TtsRequest) -> Response:
         raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
 
     return Response(content=audio, media_type=content_type)
+
+
+# Describe the PCM on the wire. The browser is handed headerless samples, so
+# without these it cannot know the rate or width to play them at; they are
+# forwarded from the upstream response rather than hardcoded, so a change of
+# voice or model on the service does not silently detune playback here.
+_PCM_HEADERS = ("x-audio-sample-rate", "x-audio-channels", "x-audio-format")
+
+
+async def _stream_tts(req: TtsRequest) -> StreamingResponse:
+    """Relay the TTS service's PCM stream straight through to the browser.
+
+    The point is time-to-first-sound: the reply starts playing while the rest
+    is still being synthesised. So the upstream connection has to stay open
+    across the response, which means entering the stream here and handing the
+    still-open body to StreamingResponse rather than returning a finished one.
+
+    An upstream failure is only detectable before the first chunk -- once a
+    200 and some bytes have gone to the browser the status line is spent, so a
+    mid-stream error can only end the audio early, and the client falls back.
+    """
+    stream_cm = tts_client.stream(req.input, req.voice, req.description)
+    try:
+        resp = await stream_cm.__aenter__()
+    except httpx.HTTPStatusError as exc:
+        logger.warning("TTS stream returned %s", exc.response.status_code)
+        raise HTTPException(status_code=502, detail="TTS service error") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("TTS stream unreachable: %s", exc)
+        raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await stream_cm.__aexit__(None, None, None)
+
+    headers = {k: resp.headers[k] for k in _PCM_HEADERS if k in resp.headers}
+    return StreamingResponse(
+        body(),
+        media_type=resp.headers.get("content-type", "audio/pcm"),
+        headers=headers,
+    )

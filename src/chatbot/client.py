@@ -13,7 +13,8 @@ Module-level `openai_client` and `mcp_client` instances are built from
 settings at import, so callers just use them.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
 from fastmcp import Client
@@ -202,24 +203,72 @@ class TtsClient:
         self.base_url = base_url.rstrip("/")
 
     async def synthesize(
-        self, input_text: str, voice: str = "Aditi", response_format: str = "wav"
+        self,
+        input_text: str,
+        voice: str = "Aditi",
+        response_format: str = "wav",
+        description: str = "",
     ) -> Tuple[bytes, str]:
         """Returns (audio_bytes, content_type). Raises httpx errors on failure."""
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/audio/speech",
-                json={
-                    "input": input_text,
-                    "voice": voice,
-                    "response_format": response_format,
-                },
+                json=self._payload(input_text, voice, response_format, description),
             )
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "audio/wav")
             return resp.content, content_type
 
+    @staticmethod
+    def _payload(
+        input_text: str, voice: str, response_format: str, description: str
+    ) -> dict:
+        payload = {
+            "input": input_text,
+            "voice": voice,
+            "response_format": response_format,
+        }
+        # Only sent when set: the service rejects some fields as empty strings,
+        # and an absent optional field is the safer default.
+        if description:
+            payload["description"] = description
+        return payload
+
+    @asynccontextmanager
+    async def stream(
+        self,
+        input_text: str,
+        voice: str = "Aditi",
+        description: str = "",
+    ) -> AsyncIterator[httpx.Response]:
+        """Open a streaming synthesis request, yielding the live response.
+
+        Always raw PCM: the service refuses stream=true for WAV, because a WAV
+        header must declare a total length that is unknown until the last
+        clause is synthesised. Callers get the real format from the response's
+        own x-audio-* headers rather than assuming one.
+
+        Streaming exists because the wait is otherwise dominated by synthesis:
+        for one measured 468-character reply, the first audio byte arrives
+        after 2.2s streaming versus 12.6s buffered. Generation runs about 2.7x
+        faster than playback, so once playback starts it does not catch up.
+        """
+        payload = self._payload(input_text, voice, "pcm", description)
+        payload["stream"] = True
+        client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0))
+        try:
+            async with client.stream(
+                "POST", f"{self.base_url}/v1/audio/speech", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                yield resp
+        finally:
+            await client.aclose()
+
 
 openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
-asr_client = AsrClient(settings.ASR_TTS_URL, settings.ASR_TIMEOUT)
+asr_client = AsrClient(
+    settings.ASR_TTS_URL, settings.ASR_TIMEOUT, settings.ASR_LANGUAGE
+)
 mcp_client = McpClient(settings.MCP_SERVER_URL)
 tts_client = TtsClient(settings.ASR_TTS_URL)

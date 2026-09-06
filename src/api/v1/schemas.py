@@ -49,6 +49,12 @@ class TtsRequest(BaseModel):
     input: str
     voice: str = "Aditi"
     response_format: str = "wav"
+    # The service streams only as raw PCM -- a WAV header has to declare a
+    # total length that is not known until the last clause is synthesised. The
+    # route below swaps the format accordingly, so a caller only asks for
+    # streaming and does not have to know that.
+    stream: bool = False
+    description: str = ""
 
 
 class AsrResponse(BaseModel):
