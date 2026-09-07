@@ -402,7 +402,7 @@ const VoiceMode = {
 
     let result;
     try {
-      result = await ask(text);
+      result = await ask(text, 'voice');
     } catch (err) {
       result = { text: '', failed: true };
     }

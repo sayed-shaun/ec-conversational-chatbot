@@ -35,10 +35,15 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     session_id = req.session_id or str(uuid.uuid4())
-    logger.info("chat request session=%s chars=%d", session_id, len(req.message))
+    logger.info(
+        "chat request session=%s mode=%s chars=%d",
+        session_id,
+        req.mode,
+        len(req.message),
+    )
 
     params = req.params.model_dump() if req.params else None
-    chat = await Chat.load(session_id)
+    chat = await Chat.load(session_id, req.mode)
     reply = await chat.send(req.message, params)
 
     return ChatResponse(session_id=session_id, reply=reply)
@@ -55,12 +60,17 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     thinking, tool calls, and answer tokens as they happen."""
     session_id = req.session_id or str(uuid.uuid4())
     params = req.params.model_dump() if req.params else None
-    logger.info("stream request session=%s chars=%d", session_id, len(req.message))
+    logger.info(
+        "stream request session=%s mode=%s chars=%d",
+        session_id,
+        req.mode,
+        len(req.message),
+    )
 
     async def events():
         yield _sse({"type": "start", "session_id": session_id})
         try:
-            chat = await Chat.load(session_id)
+            chat = await Chat.load(session_id, req.mode)
             async for event in chat.stream(req.message, params):
                 yield _sse(event)
         except Exception as exc:

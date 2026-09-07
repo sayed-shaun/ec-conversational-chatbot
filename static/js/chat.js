@@ -12,17 +12,22 @@ import { renderAnswer } from './answer.js';
 let sessionId = localStorage.getItem('ec_faq_session_id') || null;
 let busy = false;
 
-function addRetryButton(bubble, text) {
+function addRetryButton(bubble, text, mode) {
   const btn = el('button', 'retry-btn', bubble);
   btn.type = 'button';
   btn.textContent = '↻ আবার চেষ্টা করুন';
   btn.addEventListener('click', () => {
     bubble.remove();
-    ask(text);
+    ask(text, mode);
   });
 }
 
-export async function ask(text) {
+/*
+ * Runs one turn. `mode` tells the backend which system prompt to answer under
+ * -- 'voice' replies are read aloud by TTS, so they are shaped differently
+ * from typed ones (see src/chatbot/prompt.py).
+ */
+export async function ask(text, mode = 'text') {
   const bubble = addRow('bot');
 
   const think = el('details', 'think', bubble);
@@ -198,6 +203,7 @@ export async function ask(text) {
       body: JSON.stringify({
         session_id: sessionId,
         message: text,
+        mode: mode,
       }),
     });
     if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
@@ -234,7 +240,7 @@ export async function ask(text) {
   } finally {
     answerEl.classList.remove('cursor');
     if (!thinkBody.textContent.trim()) think.style.display = 'none';
-    if (failed) addRetryButton(bubble, text);
+    if (failed) addRetryButton(bubble, text, mode);
     stickToBottom();
   }
 

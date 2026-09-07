@@ -1,6 +1,6 @@
 """Request/response models for the v1 HTTP API."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,11 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     message: str
     params: Optional[SearchParams] = None
+    # Which surface asked, so the engine can pick the matching system prompt
+    # (see src/chatbot/prompt.py). Per-request rather than per-session: the UI
+    # keeps one session id whether the user types or talks. Defaults to "text",
+    # so a caller that predates this field behaves exactly as before.
+    mode: Literal["text", "voice"] = "text"
 
 
 class ResetRequest(BaseModel):

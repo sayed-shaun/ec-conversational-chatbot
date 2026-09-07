@@ -14,7 +14,7 @@ from typing import AsyncIterator, Dict, List
 
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
-from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
+from src.chatbot.prompt import DEFAULT_MODE, FALLBACK_REPLY, SYSTEM_PROMPTS
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -30,15 +30,34 @@ class Chat:
         self.history = history
 
     @staticmethod
-    def new_history() -> List[dict]:
-        """A fresh transcript: just the system prompt."""
-        return [{"role": "system", "content": SYSTEM_PROMPT}]
+    def new_history(mode: str = DEFAULT_MODE) -> List[dict]:
+        """A fresh transcript: just the system prompt for this mode."""
+        return [{"role": "system", "content": SYSTEM_PROMPTS[mode]}]
+
+    def set_mode(self, mode: str) -> None:
+        """Point the transcript at the prompt for `mode`.
+
+        Rewritten on every turn rather than fixed when the session began, for
+        two reasons. One conversation can mix surfaces -- the UI keeps a single
+        session id whether the user types or taps the mic -- so a spoken turn
+        must get the spoken prompt even if the session started as typed. And
+        the transcript is checkpointed to SQLite, so a prompt frozen at session
+        creation would outlive an edit to prompt.py: a running session would
+        keep answering under wording that no longer exists in the repo.
+        """
+        prompt = SYSTEM_PROMPTS.get(mode) or SYSTEM_PROMPTS[DEFAULT_MODE]
+        if self.history and self.history[0].get("role") == "system":
+            self.history[0] = {"role": "system", "content": prompt}
+        else:
+            self.history.insert(0, {"role": "system", "content": prompt})
 
     @classmethod
-    async def load(cls, session_id: str) -> "Chat":
+    async def load(cls, session_id: str, mode: str = DEFAULT_MODE) -> "Chat":
         """Restore a conversation from the checkpointer, or start a new one."""
         history = await checkpointer.load(session_id)
-        return cls(session_id, history or cls.new_history())
+        chat = cls(session_id, history or cls.new_history(mode))
+        chat.set_mode(mode)
+        return chat
 
     @staticmethod
     async def reset(session_id: str) -> None:
