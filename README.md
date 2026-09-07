@@ -159,23 +159,26 @@ actually touch:
 ## Repo layout
 
 ```
-├── main.py               # `python main.py api` | `python main.py mcp`
-├── Caddyfile             # /asr* → ASR service, rest → chatbot
-├── vercel.json           # build step for hosting static/index.html
-├── scripts/              # load_test.py, point-alias.sh
-├── static/index.html     # chat UI: markup, styles, SSE client, one file
+├── main.py                 # `python main.py api` | `python main.py mcp`
+├── Caddyfile               # /asr* → ASR service, rest → chatbot
+├── vercel.json             # build step for hosting the static UI
+├── scripts/                # load_test.py, point-alias.sh
+├── static/                 # the chat UI, served as-is (no build step)
+│   ├── index.html          # markup only: links css/, loads js/main.js
+│   ├── css/                # base, chat, composer, responsive, answer, voice
+│   └── js/                 # ES modules, entry point main.js
 └── src/
-    ├── core/             # config.py (typed Settings), logger.py
-    ├── api/              # the only place FastAPI is imported
-    │   ├── app.py        # create_app(): static mount, /health, v1 router
-    │   └── v1/           # routes.py (/chat, /chat/stream, /reset), schemas.py
-    ├── chatbot/          # domain logic, no web framework
-    │   ├── chat.py       # one conversation, the tool-calling loop
-    │   ├── checkpointer.py  # SqliteCheckpointer: transcripts + idle expiry
-    │   ├── client.py     # OpenAIClient (llama-server) + McpClient
-    │   ├── prompt.py     # system prompt and canned replies (Bengali)
-    │   └── tools.py      # tool catalogue, dispatch, result summary
-    └── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    ├── core/               # config.py (typed Settings), logger.py
+    ├── api/                # the only place FastAPI is imported
+    │   ├── app.py          # create_app(): static mount, /health, v1 router
+    │   └── v1/             # routes.py (/chat, /chat/stream, /reset), schemas.py
+    ├── chatbot/            # domain logic, no web framework
+    │   ├── chat.py         # one conversation, the tool-calling loop
+    │   ├── checkpointer.py # SqliteCheckpointer: transcripts + idle expiry
+    │   ├── client.py       # OpenAIClient (llama-server) + McpClient
+    │   ├── prompt.py       # system prompt and canned replies (Bengali)
+    │   └── tools.py        # tool catalogue, dispatch, result summary
+    └── mcp/                # server.py (search_faq) + tag_answer.json fallback
 ```
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
@@ -183,8 +186,8 @@ Dependencies run one way: `api → chatbot → core`. FastAPI is imported only u
 
 ## Hosting the UI separately (Vercel)
 
-`static/index.html` is self-contained, so it can be deployed on its own while
-the backend keeps running wherever it is. Three requirements:
+`static/` is plain files with no build step, so it can be deployed on its own
+while the backend keeps running wherever it is. Three requirements:
 
 1. **HTTPS backend.** An HTTPS page can't call an HTTP API. Caddy fronts the
    chatbot; an optional `ngrok` service tunnels it without a domain:
@@ -198,10 +201,10 @@ the backend keeps running wherever it is. Three requirements:
    It's a separate profile so a plain `docker compose up` never needs an ngrok
    account. On the free tier the URL changes every restart — hence step 2.
 
-2. **`API_BASE` must point at that URL.** The file defaults to `''`
-   (same-origin), which this repo's own deployment needs. `vercel.json` patches
-   that line at build time from an `NGROK_URL` env var set in the Vercel project,
-   so the tunnel URL never lands in the repo. Redeploy when it changes.
+2. **`API_BASE` must point at that URL.** `static/js/config.js` defaults it to
+   `''` (same-origin), which this repo's own deployment needs. `vercel.json`
+   patches that line at build time from an `NGROK_URL` env var set in the Vercel
+   project, so the tunnel URL never lands in the repo. Redeploy when it changes.
 
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 
