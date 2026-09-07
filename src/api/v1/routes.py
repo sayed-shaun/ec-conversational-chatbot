@@ -7,11 +7,12 @@ the engine.
 
 import json
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
 from src.api.v1.schemas import (
@@ -24,6 +25,7 @@ from src.api.v1.schemas import (
 )
 from src.chatbot.chat import Chat
 from src.chatbot.client import asr_client, tts_client
+from src.chatbot import trace
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
@@ -43,8 +45,19 @@ async def chat(req: ChatRequest) -> ChatResponse:
     )
 
     params = req.params.model_dump() if req.params else None
+    started = time.perf_counter()
     chat = await Chat.load(session_id, req.mode)
     reply = await chat.send(req.message, params)
+
+    if req.turn_id:
+        trace.record_chat(
+            req.turn_id,
+            session_id,
+            req.mode,
+            req.message,
+            reply,
+            (time.perf_counter() - started) * 1000,
+        )
 
     return ChatResponse(session_id=session_id, reply=reply)
 
@@ -69,13 +82,39 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
 
     async def events():
         yield _sse({"type": "start", "session_id": session_id})
+        # Collected on the way past so the finished turn can be traced without
+        # buffering it: the browser still receives each event as it happens.
+        started = time.perf_counter()
+        reply = ""
+        tools: list = []
         try:
             chat = await Chat.load(session_id, req.mode)
             async for event in chat.stream(req.message, params):
+                if event.get("type") == "done":
+                    reply = event.get("reply") or ""
+                elif event.get("type") == "tool_result":
+                    tools.append(
+                        {
+                            "tag": event.get("best_tag"),
+                            "score": event.get("best_score"),
+                            "confident": event.get("confident"),
+                            "error": event.get("error"),
+                        }
+                    )
                 yield _sse(event)
         except Exception as exc:
             logger.exception("stream turn failed session=%s", session_id)
             yield _sse({"type": "error", "message": str(exc)})
+        if req.turn_id:
+            trace.record_chat(
+                req.turn_id,
+                session_id,
+                req.mode,
+                req.message,
+                reply,
+                (time.perf_counter() - started) * 1000,
+                tools,
+            )
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -99,7 +138,11 @@ async def reset(req: ResetRequest) -> ResetResponse:
 
 
 @router.post("/asr", response_model=AsrResponse)
-async def asr(file: UploadFile = File(...)) -> AsrResponse:
+async def asr(
+    file: UploadFile = File(...),
+    turn_id: str = Form(default=""),
+    session_id: str = Form(default=""),
+) -> AsrResponse:
     """Transcribe one uploaded clip, server-side.
 
     The speech-in half of the voice path; POST /tts below is speech-out. Both
@@ -113,6 +156,7 @@ async def asr(file: UploadFile = File(...)) -> AsrResponse:
     if not audio:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+    started = time.perf_counter()
     try:
         text = await asr_client.transcribe(audio, file.filename or "audio.webm")
     except httpx.HTTPStatusError as exc:
@@ -126,6 +170,16 @@ async def asr(file: UploadFile = File(...)) -> AsrResponse:
 
     if settings.ASR_DUMP_DIR:
         _dump_clip(audio, file.filename or "audio.webm", text)
+
+    if turn_id:
+        trace.record_asr(
+            turn_id,
+            session_id or None,
+            audio,
+            file.filename or "audio.webm",
+            text,
+            (time.perf_counter() - started) * 1000,
+        )
 
     return AsrResponse(text=text)
 
@@ -163,6 +217,7 @@ async def tts(req: TtsRequest) -> Response:
     if req.stream:
         return await _stream_tts(req)
 
+    started = time.perf_counter()
     try:
         audio, content_type = await tts_client.synthesize(
             req.input, req.voice, req.response_format, req.description
@@ -173,6 +228,17 @@ async def tts(req: TtsRequest) -> Response:
     except httpx.HTTPError as exc:
         logger.warning("TTS service unreachable: %s", exc)
         raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
+
+    if req.turn_id:
+        trace.record_tts(
+            req.turn_id,
+            req.session_id,
+            req.input,
+            req.voice,
+            audio,
+            streamed=False,
+            ms=(time.perf_counter() - started) * 1000,
+        )
 
     return Response(content=audio, media_type=content_type)
 
@@ -206,14 +272,37 @@ async def _stream_tts(req: TtsRequest) -> StreamingResponse:
         logger.warning("TTS stream unreachable: %s", exc)
         raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
 
+    headers = {k: resp.headers[k] for k in _PCM_HEADERS if k in resp.headers}
+
+    # Tee the samples on their way past. The reply cannot be recorded before
+    # it is sent -- that would buffer the whole thing and give up the
+    # time-to-first-sound this route exists for -- so it is collected while
+    # relaying and written once the stream ends. Bounded by TTS_MAX_CHARS on
+    # the client, a few megabytes at worst.
+    recording = bytearray() if req.turn_id and trace.enabled() else None
+    started = time.perf_counter()
+
     async def body():
         try:
             async for chunk in resp.aiter_bytes():
+                if recording is not None:
+                    recording.extend(chunk)
                 yield chunk
         finally:
             await stream_cm.__aexit__(None, None, None)
+            if recording:
+                trace.record_tts(
+                    req.turn_id,
+                    req.session_id,
+                    req.input,
+                    req.voice,
+                    bytes(recording),
+                    streamed=True,
+                    sample_rate=int(headers.get("x-audio-sample-rate", 0)) or None,
+                    channels=int(headers.get("x-audio-channels", 0)) or None,
+                    ms=(time.perf_counter() - started) * 1000,
+                )
 
-    headers = {k: resp.headers[k] for k in _PCM_HEADERS if k in resp.headers}
     return StreamingResponse(
         body(),
         media_type=resp.headers.get("content-type", "audio/pcm"),

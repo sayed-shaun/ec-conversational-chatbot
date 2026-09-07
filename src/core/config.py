@@ -69,6 +69,11 @@ class ChatbotSettings(BaseSettings):
     # production -- it stores user speech.
     ASR_DUMP_DIR: str = Field(default="")
 
+    # Where every voice turn is traced: the uploaded clip, its transcript,
+    # the synthesised reply and the timings, joined per turn by the id the
+    # browser sends with both halves. Empty disables tracing entirely.
+    TRACE_DIR: str = Field(default="/data/tracing")
+
     CORS_ALLOW_ORIGINS: str = Field(default="*")
 
     MAX_HISTORY_TURNS: int = Field(default=12, ge=1)

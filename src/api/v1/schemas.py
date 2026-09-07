@@ -29,6 +29,9 @@ class ChatRequest(BaseModel):
     # keeps one session id whether the user types or talks. Defaults to "text",
     # so a caller that predates this field behaves exactly as before.
     mode: Literal["text", "voice"] = "text"
+    # Groups this turn's calls in the trace. A typed turn is just this one
+    # request; a spoken turn is ASR, then this, then TTS, all sharing the id.
+    turn_id: Optional[str] = None
 
 
 class ResetRequest(BaseModel):
@@ -60,6 +63,10 @@ class TtsRequest(BaseModel):
     # streaming and does not have to know that.
     stream: bool = False
     description: str = ""
+    # Ties this reply to the ASR request that prompted it, so the two halves
+    # land in one record. See src/chatbot/trace.py.
+    turn_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 class AsrResponse(BaseModel):

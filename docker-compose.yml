@@ -46,6 +46,7 @@ services:
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+      TRACE_DIR: ${TRACE_DIR:-/data/tracing}
       # Containers default to UTC, which put every log line six hours off
       # the clock of the person reading it.
       TZ: ${TZ:-Asia/Dhaka}
@@ -53,6 +54,7 @@ services:
     volumes:
       - ./static:/app/static:ro
       - chat-sessions:/data
+      - ./data/tracing:/data/tracing
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
