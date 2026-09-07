@@ -1,13 +1,12 @@
 /*
  * Text to speech: streaming playback, and the buffered fallback.
+ *
+ * The reply is sent as written. Making it speakable -- markdown out, digits
+ * into Bangla words, initialisms respelled -- happens in the /tts route
+ * (src/chatbot/transform.py), so every caller gets it, not just this page.
  */
 
 import { API_BASE } from './config.js';
-import { stripMarkdownForSpeech } from './speech-text.js';
-
-// Generous because streaming removes the latency cost of a longer reply;
-// still bounded so a runaway generation cannot queue minutes of audio.
-const TTS_MAX_CHARS = 3000;
 
 /*
  * Streaming speech playback.
@@ -105,7 +104,7 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
       'ngrok-skip-browser-warning': 'true',
     },
     body: JSON.stringify({
-      input: stripMarkdownForSpeech(text).slice(0, TTS_MAX_CHARS),
+      input: text,
       voice: 'Aditi',
       stream: true,
       turn_id: (meta && meta.turnId) || null,
@@ -159,7 +158,7 @@ export async function synthesizeSpeech(text, meta) {
       'ngrok-skip-browser-warning': 'true',
     },
     body: JSON.stringify({
-      input: stripMarkdownForSpeech(text).slice(0, TTS_MAX_CHARS),
+      input: text,
       voice: 'Aditi',
       response_format: 'wav',
       turn_id: (meta && meta.turnId) || null,

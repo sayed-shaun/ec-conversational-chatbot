@@ -53,26 +53,13 @@ class ChatbotSettings(BaseSettings):
 
     ASR_TIMEOUT: float = Field(default=60.0)
 
-    # Forwarded to /v1/audio/transcriptions as the OpenAI-compatible
-    # language hint, so a multilingual service does not have to guess from
-    # the leading audio -- a coin flip on the one-word clips voice mode
-    # produces. NOTE the service currently deployed ignores it: "bn", "en"
-    # and the field omitted all return byte-identical transcripts, always in
-    # Bangla script. Kept because it costs nothing and is correct for any
-    # service that does honour it. Set empty to omit the field entirely, for
-    # one that rejects unknown form fields.
     ASR_LANGUAGE: str = Field(default="bn")
 
-    # Debug aid: when set, every clip received by /asr is written here
-    # alongside its transcript, so a failing recording can be inspected as
-    # audio rather than guessed at from a byte count. Leave empty in
-    # production -- it stores user speech.
     ASR_DUMP_DIR: str = Field(default="")
 
-    # Where every voice turn is traced: the uploaded clip, its transcript,
-    # the synthesised reply and the timings, joined per turn by the id the
-    # browser sends with both halves. Empty disables tracing entirely.
     TRACE_DIR: str = Field(default="/data/tracing")
+
+    TTS_MAX_CHARS: int = Field(default=3000, ge=1)
 
     CORS_ALLOW_ORIGINS: str = Field(default="*")
 

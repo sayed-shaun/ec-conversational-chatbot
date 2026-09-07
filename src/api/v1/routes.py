@@ -25,7 +25,7 @@ from src.api.v1.schemas import (
 )
 from src.chatbot.chat import Chat
 from src.chatbot.client import asr_client, tts_client
-from src.chatbot import trace
+from src.chatbot import trace, transform
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
@@ -214,6 +214,11 @@ async def tts(req: TtsRequest) -> Response:
     app's own CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
     other.
     """
+    # Every caller gets speakable text, not just the browser: markdown out,
+    # digits into Bangla words, initialisms respelled. This used to run in the
+    # page, which left the endpoint reading asterisks aloud to anyone else.
+    req.input = transform.for_speech(req.input)[: settings.TTS_MAX_CHARS]
+
     if req.stream:
         return await _stream_tts(req)
 
