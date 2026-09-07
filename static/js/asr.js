@@ -188,7 +188,12 @@ export async function prepareForAsr(blob) {
   return encodeWav(out.samples, out.sampleRate);
 }
 
-export async function transcribe(blob) {
+/*
+ * `meta` is {turnId, sessionId}: the server files the clip, the transcript and
+ * the spoken reply under one turn (see src/chatbot/trace.py). Optional -- a
+ * caller that omits it is simply not recorded.
+ */
+export async function transcribe(blob, meta) {
   /*
    * Goes through our own backend (POST /api/v1/asr), which forwards to the
    * speech service's OpenAI-compatible /v1/audio/transcriptions. Same
@@ -199,6 +204,8 @@ export async function transcribe(blob) {
   const type = blob.type || '';
   const ext = type.includes('wav') ? 'wav' : type.includes('mp4') ? 'mp4' : 'webm';
   form.append('file', blob, 'recording.' + ext);
+  if (meta && meta.turnId) form.append('turn_id', meta.turnId);
+  if (meta && meta.sessionId) form.append('session_id', meta.sessionId);
 
   const res = await fetch(API_BASE + '/api/v1/asr', {
     method: 'POST',

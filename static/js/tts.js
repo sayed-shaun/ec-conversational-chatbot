@@ -97,7 +97,7 @@ function createSpeechStream(ctx, sampleRate, channels) {
  * fall back to the buffered path. `onStart` fires at the first audio, which
  * is when the orb should say "speaking" rather than "thinking".
  */
-export async function speakStreaming(text, ctx, onStart, registerStop) {
+export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
   const res = await fetch(API_BASE + '/api/v1/tts', {
     method: 'POST',
     headers: {
@@ -108,6 +108,8 @@ export async function speakStreaming(text, ctx, onStart, registerStop) {
       input: stripMarkdownForSpeech(text).slice(0, TTS_MAX_CHARS),
       voice: 'Aditi',
       stream: true,
+      turn_id: (meta && meta.turnId) || null,
+      session_id: (meta && meta.sessionId) || null,
     }),
   });
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
@@ -142,7 +144,7 @@ export async function speakStreaming(text, ctx, onStart, registerStop) {
   }
 }
 
-export async function synthesizeSpeech(text) {
+export async function synthesizeSpeech(text, meta) {
   /*
    * Goes through our own backend (POST /api/v1/tts), not the TTS service's
    * /v1/audio/speech directly -- that service has no CORS support, so a UI
@@ -160,6 +162,8 @@ export async function synthesizeSpeech(text) {
       input: stripMarkdownForSpeech(text).slice(0, TTS_MAX_CHARS),
       voice: 'Aditi',
       response_format: 'wav',
+      turn_id: (meta && meta.turnId) || null,
+      session_id: (meta && meta.sessionId) || null,
     }),
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);

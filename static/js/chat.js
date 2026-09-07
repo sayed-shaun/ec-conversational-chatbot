@@ -10,6 +10,10 @@ import { addRow, addUserMessage, stickToBottom } from './transcript.js';
 import { renderAnswer } from './answer.js';
 
 let sessionId = localStorage.getItem('ec_faq_session_id') || null;
+
+// Read-only view for voice mode, which tags its ASR and TTS calls with the
+// session they belong to (see src/chatbot/trace.py).
+export const getSessionId = () => sessionId;
 let busy = false;
 
 function addRetryButton(bubble, text, mode) {
@@ -22,12 +26,19 @@ function addRetryButton(bubble, text, mode) {
   });
 }
 
+// Groups a turn's calls in the server-side trace (src/chatbot/trace.py).
+// Voice mode supplies its own, so the ASR clip, this turn and the spoken
+// reply share one id; a typed turn is a single call and mints its own here.
+export const newTurnId = () =>
+  (crypto.randomUUID ? crypto.randomUUID()
+                     : String(Date.now()) + Math.random().toString(16).slice(2));
+
 /*
  * Runs one turn. `mode` tells the backend which system prompt to answer under
  * -- 'voice' replies are read aloud by TTS, so they are shaped differently
  * from typed ones (see src/chatbot/prompt.py).
  */
-export async function ask(text, mode = 'text') {
+export async function ask(text, mode = 'text', turnId = newTurnId()) {
   const bubble = addRow('bot');
 
   const think = el('details', 'think', bubble);
@@ -204,6 +215,7 @@ export async function ask(text, mode = 'text') {
         session_id: sessionId,
         message: text,
         mode: mode,
+        turn_id: turnId,
       }),
     });
     if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);

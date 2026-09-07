@@ -11,7 +11,7 @@ import {
   voiceMuteBtn, voiceCloseBtn, micBtn,
 } from './elements.js';
 import { addUserMessage } from './transcript.js';
-import { ask } from './chat.js';
+import { ask, getSessionId } from './chat.js';
 import { prepareForAsr, transcribe } from './asr.js';
 import { speakStreaming, synthesizeSpeech } from './tts.js';
 
@@ -398,6 +398,16 @@ const VoiceMode = {
     const myTurn = ++this.turn;
     const stale = () => myGen !== this.generation || myTurn !== this.turn;
 
+    /*
+     * Ties this turn's two server calls together. ASR and TTS are separate
+     * requests with a chat turn between them, so without a shared id the
+     * backend cannot tell which reply answers which question -- see
+     * src/chatbot/trace.py, which files them under this id.
+     */
+    const turnId = (crypto.randomUUID ? crypto.randomUUID()
+                                      : String(Date.now()) + Math.random().toString(16).slice(2));
+    const traceMeta = () => ({ turnId, sessionId: getSessionId() });
+
     // Whatever is still being said answers the question before this one.
     this.stopPlayback();
 
@@ -422,7 +432,7 @@ const VoiceMode = {
       } catch (prepErr) {
         clip = blob;
       }
-      text = await transcribe(clip);
+      text = await transcribe(clip, traceMeta());
     } catch (err) {
       if (stale()) return;
       this.setOrbState('error');
@@ -445,7 +455,7 @@ const VoiceMode = {
 
     let result;
     try {
-      result = await ask(text, 'voice');
+      result = await ask(text, 'voice', turnId);
     } catch (err) {
       result = { text: '', failed: true };
     }
@@ -529,7 +539,8 @@ const VoiceMode = {
             this.speaking = false;
             this.interruptPlayback = null;
           };
-        }
+        },
+        traceMeta()
       );
       if (stale()) return;
       // After a barge-in the user is already mid-sentence and listen() is
@@ -548,7 +559,7 @@ const VoiceMode = {
 
     let audioUrl;
     try {
-      audioUrl = await synthesizeSpeech(result.text);
+      audioUrl = await synthesizeSpeech(result.text, traceMeta());
     } catch (err) {
       if (stale()) return;
       // TTS failed (e.g. the voice server is out of GPU memory) -- still
