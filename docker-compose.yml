@@ -47,8 +47,6 @@ services:
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
       TRACE_DIR: ${TRACE_DIR:-/data/tracing}
-      # Containers default to UTC, which put every log line six hours off
-      # the clock of the person reading it.
       TZ: ${TZ:-Asia/Dhaka}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
@@ -70,6 +68,9 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: ec-faq-caddy
+    environment:
+      LLAMA_UPSTREAM: ${LLAMA_UPSTREAM:-172.31.60.228:8080}
+      EC_LLM_UPSTREAM: ${EC_LLM_UPSTREAM:-172.31.60.228:8006}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:

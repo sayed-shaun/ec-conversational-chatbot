@@ -1,9 +1,23 @@
 :80 {
-	# Speech is not proxied here. Both halves go through the chatbot app --
-	# POST /api/v1/asr and /api/v1/tts -- which forward to the speech
-	# service's OpenAI-compatible routes. That keeps one origin for the
-	# browser and one place to change the model host. See ASR_TTS_URL
-	# in src/core/config.py.
+	handle /llamacpp {
+		redir * /llamacpp/
+	}
+	handle_path /llamacpp/* {
+		reverse_proxy {$LLAMA_UPSTREAM:172.31.60.228:8080} {
+			# Token streaming: without this Caddy buffers the SSE body and
+			# the reply arrives in one lump at the end.
+			flush_interval -1
+		}
+	}
+
+	handle /ec-llm-service {
+		redir * /ec-llm-service/
+	}
+	handle_path /ec-llm-service/* {
+		reverse_proxy {$EC_LLM_UPSTREAM:172.31.60.228:8006} {
+			flush_interval -1
+		}
+	}
 
 	handle {
 		reverse_proxy ec-faq-chatbot:8000 {
