@@ -39,6 +39,13 @@ const VoiceMode = {
   speakingStartedAt: 0,
   interruptPlayback: null,
   generation: 0, // bumped on close, so in-flight async work becomes a no-op
+  /*
+   * Bumped per utterance. generation alone is not enough: it only changes when
+   * the overlay opens or closes, so two turns inside one session share it and
+   * neither can tell the other has superseded it. A reply is only worth
+   * playing while it is still the newest thing the user asked for.
+   */
+  turn: 0,
 
   setStatus(text) {
     voiceStatus.textContent = text || '';
@@ -155,6 +162,25 @@ const VoiceMode = {
       this.listen();
     }
     this.setStatus(this.muted ? 'মাইক্রোফোন বন্ধ আছে' : '');
+  },
+
+  /*
+   * Silence whatever is playing, whichever path queued it.
+   *
+   * interruptPlayback only ever holds the CURRENT turn's stopper -- each
+   * speakStreaming() overwrites it -- so a reply has to be stopped before the
+   * next one registers, or its stopper is lost and the audio cannot be
+   * stopped at all.
+   */
+  stopPlayback() {
+    if (this.interruptPlayback) {
+      this.interruptPlayback();
+      this.interruptPlayback = null;
+    }
+    if (this.playerEl) {
+      try { this.playerEl.pause(); } catch (e) {}
+    }
+    this.speaking = false;
   },
 
   // Continuously watches mic input level: waits for speech to start, then
@@ -358,6 +384,23 @@ const VoiceMode = {
   },
 
   async handleUtterance(blob, myGen) {
+    /*
+     * This utterance supersedes any still in flight.
+     *
+     * The mic keeps listening while a reply is being synthesised (the
+     * listen() call further down, which is what makes barge-in possible), but
+     * this.speaking stays false until the first audio byte arrives -- so a
+     * question asked in that window starts a second turn without interrupting
+     * anything. Both turns then reach speakStreaming, the second overwrites
+     * interruptPlayback, and the first plays on top of it with nothing left
+     * holding its stopper. Measured at 16 seconds of two answers at once.
+     */
+    const myTurn = ++this.turn;
+    const stale = () => myGen !== this.generation || myTurn !== this.turn;
+
+    // Whatever is still being said answers the question before this one.
+    this.stopPlayback();
+
     this.setOrbState('thinking');
     this.setStatus('শুনছি থেকে লিখছে…');
     let text = '';
@@ -372,7 +415,7 @@ const VoiceMode = {
           // Speech was detected live but the clip holds none -- a transient
           // that cleared the gate. Keep listening rather than asking the
           // ASR to transcribe silence.
-          if (myGen === this.generation && this.active) this.listen();
+          if (!stale() && this.active) this.listen();
           return;
         }
         clip = trimmed;
@@ -381,13 +424,13 @@ const VoiceMode = {
       }
       text = await transcribe(clip);
     } catch (err) {
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       this.setOrbState('error');
       this.setStatus('রূপান্তর ব্যর্থ হয়েছে, আবার চেষ্টা করুন।');
-      setTimeout(() => { if (this.active) this.listen(); }, 1500);
+      setTimeout(() => { if (!stale() && this.active) this.listen(); }, 1500);
       return;
     }
-    if (myGen !== this.generation) return;
+    if (stale()) return;
 
     if (!text) {
       this.setStatus('কিছু শোনা যায়নি, আবার বলুন।');
@@ -406,12 +449,12 @@ const VoiceMode = {
     } catch (err) {
       result = { text: '', failed: true };
     }
-    if (myGen !== this.generation) return;
+    if (stale()) return;
 
     if (!result || result.failed || !result.text) {
       this.setOrbState('error');
       this.setStatus('উত্তর তৈরি করা যায়নি, আবার চেষ্টা করুন।');
-      setTimeout(() => { if (this.active) this.listen(); }, 1500);
+      setTimeout(() => { if (!stale() && this.active) this.listen(); }, 1500);
       return;
     }
 
@@ -426,7 +469,7 @@ const VoiceMode = {
     // it must not start ticking during synthesis, when there is nothing
     // playing to barge in on.
     const beginSpeaking = () => {
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       this.setOrbState('speaking');
       this.setStatus('বলছে… (থামাতে কথা বলুন)');
       this.speaking = true;
@@ -435,7 +478,7 @@ const VoiceMode = {
     const doneSpeaking = () => {
       this.speaking = false;
       this.interruptPlayback = null;
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       this.setOrbState(null);
       this.setStatus('শুনছি…');
       // Safety net: listen() should already be running (started below,
@@ -449,18 +492,35 @@ const VoiceMode = {
      * possible at all. Without it the mic is simply off while the bot
      * talks and there is nothing to interrupt with.
      */
-    this.listen();
+    if (!stale()) this.listen();
 
     // The mic's own context is reused for playback so both share one clock;
     // it is also already unlocked by the opening gesture, which a context
     // created here would not be.
     try {
       let interrupted = false;
+      let stopStream = null;
       await speakStreaming(
         result.text,
         this.audioCtx,
-        beginSpeaking,
+        () => {
+          // First audio. A newer question may have arrived while this reply
+          // was being synthesised -- drop it rather than talk over the answer
+          // the user is now waiting for.
+          if (stale()) {
+            if (stopStream) stopStream();
+            return;
+          }
+          beginSpeaking();
+        },
         (stop) => {
+          stopStream = stop;
+          // Registered only while this turn is still the current one, so a
+          // superseded turn cannot overwrite the live turn's stopper.
+          if (stale()) {
+            stop();
+            return;
+          }
           // Exposed so listen()'s tick loop can cut the reply off the
           // instant it detects the user talking over it.
           this.interruptPlayback = () => {
@@ -471,14 +531,14 @@ const VoiceMode = {
           };
         }
       );
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       // After a barge-in the user is already mid-sentence and listen() is
       // recording it; announcing "finished speaking" here would reset the
       // orb and status out from under them.
       if (!interrupted) doneSpeaking();
       return;
     } catch (err) {
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       // Fall through to the buffered path below: streaming is the fast
       // route, not the only one, and a reply the user can hear late beats
       // one they cannot hear at all.
@@ -490,15 +550,22 @@ const VoiceMode = {
     try {
       audioUrl = await synthesizeSpeech(result.text);
     } catch (err) {
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       // TTS failed (e.g. the voice server is out of GPU memory) -- still
       // move on and keep the conversation going by text.
       this.setOrbState('error');
       this.setStatus('কণ্ঠস্বর তৈরি ব্যর্থ হয়েছে, লেখায় উত্তর দেখুন।');
-      setTimeout(() => { if (this.active) this.listen(); }, 1500);
+      setTimeout(() => { if (!stale() && this.active) this.listen(); }, 1500);
       return;
     }
-    if (myGen !== this.generation) return;
+    if (stale()) return;
+
+    if (stale()) {
+      // Same reason as the streaming path: this reply is no longer the one
+      // being waited for, so it must not be heard.
+      URL.revokeObjectURL(audioUrl);
+      return;
+    }
 
     const audio = this.playerEl;
     audio.src = audioUrl;
@@ -517,7 +584,7 @@ const VoiceMode = {
     };
     const onError = () => {
       cleanupAudio();
-      if (myGen !== this.generation) return;
+      if (stale()) return;
       this.setOrbState('error');
       this.setStatus('অডিও চালানো সম্ভব হয়নি।');
       if (!this.recorder || this.recorder.state !== 'recording') this.listen();
