@@ -35,7 +35,7 @@ docker compose up --build
 
 | | URL |
 |---|---|
-| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 8000) |
+| Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 9100) |
 | API docs | `http://localhost:${PORT}/docs` |
 | Health | `http://localhost:${PORT}/health` |
 | MCP server | internal only — `ec-faq-mcp:9000/mcp` |
@@ -150,7 +150,7 @@ actually touch:
 | `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
-| `PORT` | `8000` | The only port published on the host |
+| `PORT` | `9100` | The only port published on the host |
 | `ASR_TTS_URL` | `http://172.31.60.228:8000` | Speech service for both ASR and TTS |
 
 `src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
