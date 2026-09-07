@@ -80,7 +80,8 @@ services:
     profiles: [ "public" ]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
-    command: http caddy:80
+
+    command: http ${NGROK_DOMAIN:+--url=}${NGROK_DOMAIN} caddy:80
     ports:
       - "4040:4040"
     depends_on:

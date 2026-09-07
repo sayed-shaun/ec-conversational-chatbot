@@ -194,17 +194,27 @@ while the backend keeps running wherever it is. Three requirements:
 
    ```bash
    docker compose --profile public up -d     # needs NGROK_AUTHTOKEN in .env
+   ```
+
+   It's a separate profile so a plain `docker compose up` never needs an ngrok
+   account.
+
+   Set `NGROK_DOMAIN` to a reserved domain (free accounts get one, from
+   https://dashboard.ngrok.com/domains) and the URL survives restarts. Without
+   it the tunnel is ephemeral and every restart hands out a new URL, which
+   means redoing step 2 each time. Read the current one back with:
+
+   ```bash
    curl -s http://localhost:4040/api/tunnels | python3 -c \
      "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
    ```
 
-   It's a separate profile so a plain `docker compose up` never needs an ngrok
-   account. On the free tier the URL changes every restart — hence step 2.
-
 2. **`API_BASE` must point at that URL.** `static/js/config.js` defaults it to
    `''` (same-origin), which this repo's own deployment needs. `vercel.json`
    patches that line at build time from an `NGROK_URL` env var set in the Vercel
-   project, so the tunnel URL never lands in the repo. Redeploy when it changes.
+   project, so the tunnel URL never lands in the repo. With a reserved domain
+   this is set once; with an ephemeral tunnel it has to be re-pointed and
+   redeployed on every restart.
 
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 
