@@ -46,6 +46,9 @@ services:
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+      # Containers default to UTC, which put every log line six hours off
+      # the clock of the person reading it.
+      TZ: ${TZ:-Asia/Dhaka}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ./static:/app/static:ro
