@@ -16,12 +16,6 @@
 	handle_path /ec-llm-service/* {
 		reverse_proxy {$EC_LLM_UPSTREAM:172.31.60.228:8006} {
 			flush_interval -1
-			# The prefix is stripped above, so the app cannot see where it is
-			# published -- and its generated URLs (/docs asking for
-			# /openapi.json) would point at this proxy's root, which is the
-			# chatbot. This header tells it, and it sets root_path per request:
-			# absent on a direct call, so direct access is unchanged.
-			header_up X-Forwarded-Prefix /ec-llm-service
 		}
 	}
 
