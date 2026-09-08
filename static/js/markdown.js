@@ -26,8 +26,25 @@ function renderInline(text) {
   return out;
 }
 
+/*
+ * The model routinely writes an enumeration on one line: "1. অ্যাকাউন্ট করুন।
+ * ২. লগইন করুন। ৩. ডাউনলোড করুন।" Markdown needs each item on its own line, so
+ * all three arrive as a single list item with the later numbers as literal
+ * text. Splitting them is safe only with a tight anchor, because a Bengali
+ * numeral mid-sentence is also how every fee and date is written.
+ *
+ * The anchor is a daṛi, then whitespace, then a number followed by a dot or
+ * bracket and more whitespace. "২৩০ টাকা" has no dot after the digits and
+ * never matches; a sentence that genuinely ends before a numbered step always
+ * does. The daṛi is kept -- only the space after it becomes a newline.
+ */
+const INLINE_ENUMERATION = /(।)\s+(?=[0-9০-৯]+[.)]\s)/g;
+
 export function renderMarkdown(source) {
-  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const normalised = source
+    .replace(/\r\n/g, '\n')
+    .replace(INLINE_ENUMERATION, '$1\n');
+  const lines = normalised.split('\n');
   const html = [];
   let paragraph = [];
   let list = null;
