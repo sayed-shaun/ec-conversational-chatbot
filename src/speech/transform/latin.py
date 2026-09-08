@@ -263,6 +263,21 @@ def spoken_latin(text: str) -> str:
         text = pattern.sub(word, text)
     return text
 
+# Script other than Bengali or Latin also reaches the voice: a reply came back
+# with the Arabic "مراجعه" dropped into a Bengali sentence. There is no useful
+# spoken form for it, so it goes the way an English word does.
+#
+# The exclusions are not optional. The daṛi is U+0964, which lives in the
+# Devanagari block rather than the Bengali one, so a plain "not Bengali" rule
+# deletes every sentence ending in the corpus. ZWNJ and ZWJ are outside the
+# block too and do real work in Bengali conjuncts.
+# Dashes are excluded because they separate words rather than being words:
+# deleting the em dash in "সংযুক্ত—এটি" welds two words into one. They are
+# turned into a pause by the punctuation stage instead.
+_FOREIGN_RUN = re.compile(
+    r"[^\s\x00-\x7F\u0980-\u09FF\u0964\u0965\u200C\u200D\u2013-\u2015]+"
+)
+
 _ACRONYM = re.compile(r"\b[A-Z]{2,6}\b", re.ASCII)
 _LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'\-]*(?:\.[A-Za-z]+)*", re.ASCII)
 
@@ -270,12 +285,13 @@ _LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'\-]*(?:\.[A-Za-z]+)*", re.ASCII)
 _SENTENCE_LATIN_LIMIT = 0.30
 
 
-def _latin_share(sentence: str) -> float:
+def _foreign_share(sentence: str) -> float:
+    """Share of a sentence's letters that a Bangla voice cannot say."""
     letters = [c for c in sentence if c.isalpha()]
     if not letters:
         return 0.0
-    latin = sum(1 for c in letters if c.isascii())
-    return latin / len(letters)
+    foreign = sum(1 for c in letters if not ("\u0980" <= c <= "\u09FF"))
+    return foreign / len(letters)
 
 
 def latin_for_speech(text: str) -> str:
@@ -294,7 +310,7 @@ def latin_for_speech(text: str) -> str:
         if not sentence:
             continue
         spelled = _ACRONYM.sub(lambda m: spell_latin(m.group(0)), sentence)
-        if _latin_share(spelled) >= _SENTENCE_LATIN_LIMIT:
+        if _foreign_share(spelled) >= _SENTENCE_LATIN_LIMIT:
             continue
-        kept.append(_LATIN_RUN.sub("", spelled))
+        kept.append(_FOREIGN_RUN.sub("", _LATIN_RUN.sub("", spelled)))
     return "".join(kept)
