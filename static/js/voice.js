@@ -33,6 +33,9 @@ const VoiceMode = {
   // Lives on the object, not inside listen(), so it carries across
   // turns instead of re-learning the room from scratch each time.
   noiseFloor: 0.01,
+
+  // Numbers from the most recent barge-in, for ?vdebug only.
+  lastBargeIn: null,
   peakLevel: 0,
   playerEl: null,
   speaking: false,
@@ -338,6 +341,22 @@ const VoiceMode = {
 
       if (loud) {
         if (this.speaking && this.interruptPlayback) {
+          /*
+           * Record what tripped it. A false barge-in is only diagnosable at
+           * the instant it fires: the live readout below is overwritten every
+           * frame, so by the time anyone looks the numbers are gone. Kept as
+           * one line, and only under ?vdebug.
+           */
+          if (VOICE_DEBUG) {
+            this.lastBargeIn = {
+              level: level,
+              bar: bargeInBar,
+              floor: floor,
+              ratio: level / (bargeInBar || 1),
+              afterMs: Math.round(now - this.speakingStartedAt),
+            };
+            console.warn('[voice] barge-in', this.lastBargeIn);
+          }
           this.interruptPlayback();
           this.interruptPlayback = null;
           this.setOrbState(null);
@@ -375,7 +394,14 @@ const VoiceMode = {
             ? ' +' + ((now - lastLoudAt) / 1000).toFixed(1) + 's'
             : '') +
           (loud ? ' loud' : '') + (sustaining ? ' sustain' : '') +
-          (this.speaking ? ' | playing (barge>' + f(bargeInBar) + ')' : '');
+          (this.speaking ? ' | playing (barge>' + f(bargeInBar) + ')' : '') +
+          (this.lastBargeIn
+            ? '\nlast barge-in: rms ' + f(this.lastBargeIn.level) +
+              ' vs bar ' + f(this.lastBargeIn.bar) +
+              '  (x' + this.lastBargeIn.ratio.toFixed(1) + ')' +
+              '  floor ' + f(this.lastBargeIn.floor) +
+              '  +' + this.lastBargeIn.afterMs + 'ms'
+            : '');
       }
 
       this.levelRaf = requestAnimationFrame(tick);
