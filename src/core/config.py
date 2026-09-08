@@ -63,6 +63,13 @@ class ChatbotSettings(BaseSettings):
     # deliberately, for debugging, rather than by default.
     TRACE_DIR: str = Field(default="")
 
+    # Days to keep a trace once written. 0 keeps them forever, which is
+    # the wrong answer for recorded speech but stays the default so that
+    # enabling TRACE_DIR never silently deletes anything.
+    TRACE_TTL_DAYS: int = Field(default=0, ge=0)
+
+    TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
+
     TTS_MAX_CHARS: int = Field(default=3000, ge=1)
 
     CORS_ALLOW_ORIGINS: str = Field(default="*")

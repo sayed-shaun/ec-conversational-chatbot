@@ -40,6 +40,7 @@ import os
 import re
 import struct
 import tempfile
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -410,3 +411,42 @@ def record_chat(
         _save(path, record)
     except OSError as exc:
         logger.warning("could not record chat turn %s: %s", turn_id, exc)
+
+
+_TTL_GLOBS = ("*.json", os.path.join("asr", "*.wav"), os.path.join("tts", "*.wav"))
+
+
+def purge_expired(ttl_days: int = None) -> int:
+    """Delete trace files older than the TTL. Returns how many went.
+
+    Kept alongside writing rather than in the sweeper, because what a trace is
+    made of -- a JSON at the root plus audio one level down -- is this module's
+    business and nobody else's.
+
+    Age comes from the file's mtime, not from the timestamp in its name: a
+    record is updated in place when the TTS half of a turn lands, and the name
+    is fixed when the ASR half starts, so mtime is when the turn actually
+    finished. Best-effort, like the rest of this module -- a failed cleanup
+    must never take the conversation down with it.
+    """
+    ttl = settings.TRACE_TTL_DAYS if ttl_days is None else ttl_days
+    if not enabled() or ttl <= 0:
+        return 0
+
+    cutoff = time.time() - ttl * 86400
+    removed = 0
+    for pattern in _TTL_GLOBS:
+        for path in glob.glob(os.path.join(settings.TRACE_DIR, pattern)):
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.unlink(path)
+                    removed += 1
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.warning("could not remove expired trace %s", path)
+
+    # A stem cached in this process may now point at a file that is gone.
+    if removed:
+        _stems.clear()
+    return removed
