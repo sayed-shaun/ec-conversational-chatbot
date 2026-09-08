@@ -8,7 +8,7 @@ one place.
 
 import os
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BASE_CONFIG = SettingsConfigDict(
@@ -46,31 +46,6 @@ class ChatbotSettings(BaseSettings):
     LLAMA_MODEL: str = Field(default="local-model")
 
     LLAMA_REASONING_EFFORT: str = Field(default="")
-
-    @field_validator("LLAMA_REASONING_EFFORT")
-    @classmethod
-    def _check_reasoning_effort(cls, v: str) -> str:
-        """Reject values that look like a dial but aren't one.
-
-        llama-server reports `supports_reasoning_effort: false` and treats this
-        as a binary: only "none" suppresses the thinking pass. "low"/"medium"/
-        "high" are accepted by the API and then ignored, so a config that reads
-        like a compromise silently buys full thinking -- and an invented value
-        ("max") is swallowed just as quietly. Fail loudly instead.
-        """
-        v = v.strip().lower()
-        if v in ("", "none"):
-            return v
-        if v in ("low", "medium", "high"):
-            raise ValueError(
-                f"LLAMA_REASONING_EFFORT={v!r} is a no-op: llama-server only "
-                'honours "none". Use "none" to disable thinking, or "" to '
-                "leave it on."
-            )
-        raise ValueError(
-            f"LLAMA_REASONING_EFFORT={v!r} is not a valid effort. "
-            'Use "none" or "".'
-        )
 
     MCP_SERVER_URL: str = Field(default="http://ec-faq-mcp:9000/mcp")
 

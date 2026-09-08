@@ -17,9 +17,8 @@ llama-server you already have running.
   llama.cpp). Needs a tool-calling model (Qwen2.5-Instruct, Llama-3.1/3.2,
   Hermes-2-Pro, Gemma) started **with `--jinja`** — without it no `tool_calls`
   are emitted and the bot silently answers from the model instead of your data.
-  Turn thinking off too — it cuts turn time from ~31s to ~13s
-  ([details](#performance)) — either with **`--reasoning off`** on the server
-  or **`LLAMA_REASONING_EFFORT=none`** per request. Don't run a second llama.cpp on the same GPU — both
+  Add **`--reasoning off`** too; it cuts turn time from ~31s to ~13s
+  ([details](#performance)). Don't run a second llama.cpp on the same GPU — both
   will fight for VRAM.
 - **A `GITHUB_TOKEN`** — a PAT with read access to the private knowledge-base
   repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
@@ -270,24 +269,10 @@ questions, same build, same machine:
 | `--reasoning off` | 4/4 | 4/4 | **13.3s** |
 
 No quality loss appeared; on the hardest case it was 4.5× faster *and* better.
-Caveat: four questions is not a benchmark.
-
-`LLAMA_REASONING_EFFORT=none` is the per-request equivalent and needs no server
-restart. It is **not** a scale, though: llama-server reports
-`supports_reasoning_effort: false`, and only `none` has any effect — `low`,
-`medium` and `high` all produce byte-identical output to sending nothing, i.e.
-full thinking. An earlier note here called the per-request lever unreliable;
-that was a non-`none` value being a silent no-op. Measured over three streaming
-runs each, same prompt, `temperature: 0`:
-
-| `reasoning_effort` | Reasoning chunks | Thinking chars |
-|---|---|---|
-| *(unset)* | 389 | 1631 |
-| `medium` | 389 | 1631 |
-| `none` | **0** | **0** |
-
-A typo'd or invented value (`max`, say) is accepted silently and means full
-thinking, so `config.py` validates the setting at startup.
+Caveat: four questions is not a benchmark. `LLAMA_REASONING_EFFORT` forwards
+`reasoning_effort` per request as a softer alternative, but proved unreliable
+through the streaming path (247, 101 and 0 reasoning chunks across three
+identical runs) — the server flag is the dependable lever.
 
 ## Limitations
 
