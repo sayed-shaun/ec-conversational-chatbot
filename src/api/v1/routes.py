@@ -48,7 +48,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     params = req.params.model_dump() if req.params else None
     started = time.perf_counter()
-    chat = await Chat.load(session_id, req.mode)
+    chat = await Chat.load(session_id)
     reply = await chat.send(req.message, params)
 
     if req.turn_id:
@@ -88,7 +88,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
         reply = ""
         tools: list = []
         try:
-            chat = await Chat.load(session_id, req.mode)
+            chat = await Chat.load(session_id)
             async for event in chat.stream(req.message, params):
                 if event.get("type") == "done":
                     reply = event.get("reply") or ""

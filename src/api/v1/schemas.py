@@ -23,10 +23,9 @@ class SearchParams(BaseModel):
 class ChatRequest(BaseModel):
     """One turn of a conversation.
 
-    `mode` says which surface asked, so the engine can select the matching
-    system prompt. It is per request rather than per session because the UI
-    keeps one session id whether the user types or talks, and it defaults to
-    "text" so a caller predating the field behaves as before.
+    `mode` records which surface asked. One prompt now serves both, so it no
+    longer selects wording; it labels the turn in the log and the trace, where
+    a spoken turn reads differently from a typed one.
 
     `turn_id` groups this turn's calls in the trace. A typed turn is this
     request alone; a spoken turn is ASR, then this, then TTS, all sharing the
