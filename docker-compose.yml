@@ -6,9 +6,9 @@ services:
       dockerfile: mcp.Dockerfile
     container_name: ec-conversational-mcp
     environment:
-      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
+      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:?set TOP_SIMILAR_API_URL in .env}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
-      TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
+      TAG_ANSWER_URL: ${TAG_ANSWER_URL:?set TAG_ANSWER_URL in .env}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       TAG_ANSWER_ALLOW_LOCAL_FALLBACK: ${TAG_ANSWER_ALLOW_LOCAL_FALLBACK:-true}
       TAG_ANSWER_REFRESH_SECONDS: ${TAG_ANSWER_REFRESH_SECONDS:-0}
@@ -33,11 +33,11 @@ services:
       dockerfile: api.Dockerfile
     container_name: ec-conversational-chatbot
     environment:
-      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
+      LLAMA_BASE_URL: ${LLAMA_BASE_URL:?set LLAMA_BASE_URL in .env}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
       MCP_SERVER_URL: http://ec-conversational-mcp:9000/mcp
-      ASR_TTS_URL: ${ASR_TTS_URL:-http://172.31.60.228:8000}
+      ASR_TTS_URL: ${ASR_TTS_URL:-}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}
       ASR_DUMP_DIR: ${ASR_DUMP_DIR:-}
@@ -71,8 +71,8 @@ services:
     image: caddy:2-alpine
     container_name: ec-conversational-caddy
     environment:
-      LLAMA_UPSTREAM: ${LLAMA_UPSTREAM:-172.31.60.228:8080}
-      EC_LLM_UPSTREAM: ${EC_LLM_UPSTREAM:-172.31.60.228:8006}
+      LLAMA_UPSTREAM: ${LLAMA_UPSTREAM:?set LLAMA_UPSTREAM in .env}
+      EC_LLM_UPSTREAM: ${EC_LLM_UPSTREAM:?set EC_LLM_UPSTREAM in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:

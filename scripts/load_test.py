@@ -8,11 +8,11 @@ it), so this fires real concurrent async requests and measures per-request
 wall time, time-to-first-byte (streaming only), and error rate.
 
 Usage:
-    python scripts/load_test.py --url http://172.31.60.228:9100 \
+    python scripts/load_test.py --url http://YOUR_HOST:9100 \
         --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 
     # test the non-streaming endpoint instead
-    python scripts/load_test.py --url http://172.31.60.228:9100 --no-stream
+    python scripts/load_test.py --url http://YOUR_HOST:9100 --no-stream
 """
 
 import argparse

@@ -112,7 +112,7 @@ talks to this stack's own origin.
 long-lived response). Use `scripts/load_test.py`:
 
 ```bash
-python scripts/load_test.py --url http://172.31.60.228:9100 \
+python scripts/load_test.py --url http://YOUR_HOST:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
@@ -140,10 +140,16 @@ then `.env`, then the defaults in that file. Names map case-insensitively
 to change a setting. `.env.example` documents the full list; the ones you'll
 actually touch:
 
+No host, endpoint or credential has a default in the code — anything that
+identifies a deployment lives only in `.env`, and the service refuses to start
+if a required one is missing.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
-| `TOP_SIMILAR_API_URL` | `…:8002/ec_bot/top_similar/` | Embedding search API |
+| `LLAMA_BASE_URL` | **required** | Your llama-server |
+| `TOP_SIMILAR_API_URL` | **required** | Embedding search API |
+| `TAG_ANSWER_URL` | **required** | Knowledge-base dataset |
+| `LLAMA_UPSTREAM`, `EC_LLM_UPSTREAM` | **required with `caddy`** | Upstreams Caddy publishes |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
@@ -151,7 +157,7 @@ actually touch:
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `9100` | The only port published on the host |
-| `ASR_TTS_URL` | `http://172.31.60.228:8000` | Speech service for both ASR and TTS |
+| `ASR_TTS_URL` | _(required for voice)_ | Speech service for both ASR and TTS |
 
 `src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
 `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.

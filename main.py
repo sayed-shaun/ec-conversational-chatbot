@@ -26,6 +26,8 @@ def run_api() -> None:
 
     from src.core.config import chatbot_settings as settings
 
+    settings.check_required()
+
     logger.info(
         "starting chatbot API on http://%s:%s", settings.API_HOST, settings.API_PORT
     )
@@ -38,7 +40,10 @@ def run_api() -> None:
 
 def run_mcp() -> None:
     """Serve the MCP search_ec_services server."""
+    from src.core.config import mcp_settings
     from src.mcp.server import main as mcp_main
+
+    mcp_settings.check_required()
 
     mcp_main()
 
