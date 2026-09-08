@@ -50,6 +50,54 @@ def _name_pattern(names: Iterable[str]) -> re.Pattern:
 _TOOL_MENTION = _name_pattern(_tool_names())
 
 
+# The model also imitates the tool-calling protocol in its own prose, emitting
+# a reply that begins "query: ..." followed by a tool_output block and a JSON
+# object it invented. None of that carries the tool's name, so the sentence
+# rule above does not see it, and a citizen is shown machine plumbing plus a
+# fabricated result.
+#
+# Matched by line, because that is the shape the model produces: an ASCII
+# label with a colon, or a line of JSON carrying one of the result keys. Both
+# tests are deliberately narrow -- a Bengali reply contains neither.
+_PROTOCOL_LABEL = re.compile(
+    r"^\s*(?:query|tool|tool_call|tool_input|tool_output|tool_result|tool_response"
+    r"|function|function_call|arguments|args|observation|thought|action|input"
+    r"|output|response|result)\s*:",
+    re.IGNORECASE | re.ASCII,
+)
+
+_RESULT_KEYS = re.compile(
+    r'"(?:best_answer|alternatives|confident|input_question|best_tag|top_k'
+    r'|CONFIDENCE_THRESHOLD|runner_up_score|min_score_ratio)"'
+)
+
+_JSON_NOISE = re.compile(r"^\s*[\[\]{},]*\s*$")
+
+
+def _is_protocol(line: str) -> bool:
+    """Whether a line is machine protocol rather than an answer."""
+    if _PROTOCOL_LABEL.match(line):
+        return True
+    if _RESULT_KEYS.search(line):
+        return True
+    stripped = line.strip()
+    if stripped.startswith(("{", "}", "[", "]")) and not any(
+        "\u0980" <= c <= "\u09FF" for c in stripped
+    ):
+        return True
+    return False
+
+
+def strip_protocol(text: str) -> str:
+    """Drop lines where the model imitated the tool-calling protocol."""
+    lines = (text or "").splitlines()
+    if not any(_is_protocol(line) for line in lines):
+        return text or ""
+    kept = [line for line in lines if not _is_protocol(line)]
+    kept = [line for line in kept if not _JSON_NOISE.match(line)]
+    return "\n".join(kept).strip()
+
+
 def mentions_tool(text: str) -> bool:
     """True if `text` names one of the tools."""
     return bool(_TOOL_MENTION.search(text or ""))
@@ -61,6 +109,7 @@ def scrub(text: str) -> str:
     Returns "" if that removes everything -- the caller decides what to say
     instead, since an empty reply is never the right thing to show.
     """
+    text = strip_protocol(text)
     if not text or not mentions_tool(text):
         return text or ""
 
