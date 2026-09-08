@@ -2,7 +2,7 @@
 Entrypoint for both services in this repo.
 
     python main.py api    # FastAPI chatbot backend (default)
-    python main.py mcp    # FastMCP search_faq server
+    python main.py mcp    # FastMCP search_ec_services server
 
 Two containers run from the same image-building context, so keeping both
 entrypoints here means there is one obvious place to look for "how does this
@@ -37,7 +37,7 @@ def run_api() -> None:
 
 
 def run_mcp() -> None:
-    """Serve the MCP search_faq server."""
+    """Serve the MCP search_ec_services server."""
     from src.mcp.server import main as mcp_main
 
     mcp_main()

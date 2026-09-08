@@ -50,7 +50,7 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 |---|---|---|
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
 | **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
-| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
+| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_ec_services` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
 | **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
 
@@ -58,8 +58,8 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
     CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
-    BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
-    BOT -->|"model asked for search_faq"| MCP["ec-conversational-mcp"]
+    BOT <-->|"/v1/chat/completions<br/>+ search_ec_services schema"| LLM["llama-server"]
+    BOT -->|"model asked for search_ec_services"| MCP["ec-conversational-mcp"]
     MCP --> SIM["top_similar API"]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
@@ -67,11 +67,11 @@ flowchart LR
 ```
 
 **The chatbot orchestrates, not the model.** llama-server never talks to the
-MCP server: it only *asks* for `search_faq` in a `tool_calls` response, and
+MCP server: it only *asks* for `search_ec_services` in a `tool_calls` response, and
 `src/chatbot/chat.py` executes the call, appends the result to the transcript,
 and calls llama-server again — up to `MAX_TOOL_HOPS` times.
 
-The model decides whether a question needs a lookup. If it does, `search_faq`
+The model decides whether a question needs a lookup. If it does, `search_ec_services`
 queries `top_similar`, de-duplicates by `tag`, resolves each tag to its answer,
 and returns the best one with a confidence flag and alternatives. Below
 `CONFIDENCE_THRESHOLD` the system prompt tells the model to admit it doesn't
@@ -119,7 +119,7 @@ python scripts/load_test.py --url http://172.31.60.228:9100 \
 ### Retrieval parameters
 
 The UI sends a `params` object per request. `top_k` is forwarded to
-`top_similar`; the rest are implemented in `search_faq`
+`top_similar`; the rest are implemented in `search_ec_services`
 (`src/mcp/server.py`), since the upstream API accepts only `question` and
 `top_k`.
 
@@ -178,7 +178,7 @@ actually touch:
     │   ├── client.py       # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py       # system prompt and canned replies (Bengali)
     │   └── tools.py        # tool catalogue, dispatch, result summary
-    └── mcp/                # server.py (search_faq) + tag_answer.json fallback
+    └── mcp/                # server.py (search_ec_services) + tag_answer.json fallback
 ```
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
@@ -241,7 +241,7 @@ from fastmcp import Client
 async def main():
     async with Client("http://ec-conversational-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
-        result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
+        result = await client.call_tool("search_ec_services", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))
 
 asyncio.run(main())

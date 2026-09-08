@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class SearchParams(BaseModel):
     """Retrieval knobs the UI's parameter panel can override per request.
 
-    These are forwarded to the `search_faq` MCP tool. Anything left unset
+    These are forwarded to the `search_ec_services` MCP tool. Anything left unset
     falls back to the tool's own defaults (and, for min_score, to the
     server-side CONFIDENCE_THRESHOLD).
     """

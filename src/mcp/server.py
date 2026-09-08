@@ -1,7 +1,7 @@
 """
 EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
 --------------------------------------------------------------------------
-Exposes a single MCP tool, `search_faq`, that:
+Exposes a single MCP tool, `search_ec_services`, that:
 
   1. Sends the user's question to the external `top_similar` embedding-search
      API (your existing service, e.g. http://<host>:8002) and gets back the
@@ -43,7 +43,7 @@ mcp = FastMCP(name="ec-conversational-search")
 
 
 @mcp.tool
-def search_faq(
+def search_ec_services(
     question: str,
     top_k: int = 10,
     min_score: float | None = None,
