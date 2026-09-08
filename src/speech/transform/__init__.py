@@ -23,14 +23,14 @@ matching in exactly the sentences it exists for. Every pattern that needs the
 JavaScript meaning is compiled with re.ASCII.
 """
 
-from src.chatbot.transform.addresses import (
+from src.speech.transform.addresses import (
     DOMAIN_LABEL_BN,
     SERVICE_SITE_BN,
     addresses_for_speech,
     dedupe_site_noun,
 )
-from src.chatbot.transform.common import collapse_space, has_bengali
-from src.chatbot.transform.latin import (
+from src.speech.transform.common import collapse_space, has_bengali
+from src.speech.transform.latin import (
     LATIN_LETTER_BN,
     SPOKEN_LATIN,
     SPOKEN_TERMS,
@@ -38,8 +38,8 @@ from src.chatbot.transform.latin import (
     spell_latin,
     spoken_latin,
 )
-from src.chatbot.transform.markup import strip_markdown
-from src.chatbot.transform.numbers import (
+from src.speech.transform.markup import strip_markdown
+from src.speech.transform.numbers import (
     BN_DIGITS,
     bangla_date_ordinal,
     bangla_hundreds,
@@ -51,7 +51,7 @@ from src.chatbot.transform.numbers import (
     number_to_bangla_words,
     numbers_for_speech,
 )
-from src.chatbot.transform.punctuation import punctuation_for_speech
+from src.speech.transform.punctuation import punctuation_for_speech
 
 __all__ = [
     "for_speech",

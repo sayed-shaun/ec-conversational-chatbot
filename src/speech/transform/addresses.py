@@ -7,7 +7,7 @@ and the path is where Latin letters survive every other rule.
 
 import re
 
-from src.chatbot.transform.latin import spell_latin
+from src.speech.transform.latin import spell_latin
 
 # The one address in the knowledge base, said as a name rather than spelled
 # out. "সার্ভিসেস ডট এনআইডিডাব্লিউ ডট গভ ডট বিডি" is thirteen syllables of

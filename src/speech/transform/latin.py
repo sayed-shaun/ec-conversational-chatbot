@@ -8,7 +8,7 @@ English word with no useful spoken form, and it is dropped.
 
 import re
 
-from src.chatbot.transform.common import SENTENCE_SPLIT, has_bengali
+from src.speech.transform.common import SENTENCE_SPLIT, has_bengali
 
 # Latin that reaches the voice anyway. The prompt tells the model not to write
 # English or initialisms, but an initialism copied out of a tool result gets

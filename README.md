@@ -171,18 +171,30 @@ actually touch:
     ├── core/               # config.py (typed Settings), logger.py
     ├── api/                # the only place FastAPI is imported
     │   ├── app.py          # create_app(): static mount, /health, v1 router
+    │   ├── trace.py        # per-turn record on disk (off unless TRACE_DIR)
     │   └── v1/             # routes.py (/chat, /chat/stream, /reset), schemas.py
-    ├── chatbot/            # domain logic, no web framework
+    ├── chatbot/            # the conversation, no web framework
     │   ├── chat.py         # one conversation, the tool-calling loop
     │   ├── checkpointer.py # SqliteCheckpointer: transcripts + idle expiry
     │   ├── client.py       # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py       # system prompt and canned replies (Bengali)
+    │   ├── sanitize.py     # keeps the tool name out of every reply
     │   └── tools.py        # tool catalogue, dispatch, result summary
+    ├── speech/             # the voice path; a typed turn touches none of it
+    │   ├── asr.py          # audio up, transcript back
+    │   ├── tts.py          # text down, audio back
+    │   └── transform/      # a reply rewritten into something the voice can say
+    │       ├── markup.py       # markdown out
+    │       ├── addresses.py    # URLs said as names, paths dropped
+    │       ├── numbers.py      # digits as quantities, dictation or ordinals
+    │       ├── latin.py        # English rendered, spelt, or removed
+    │       └── punctuation.py  # the marks a voice can say
     └── mcp/                # server.py (search_ec_services) + tag_answer.json fallback
 ```
 
-Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
-`src/api/`, so `src/chatbot/` can be used or tested without a web server.
+Dependencies run one way: `api → {chatbot, speech} → core`. FastAPI is imported
+only under `src/api/`, so `src/chatbot/` and `src/speech/` can be used or tested
+without a web server. `chatbot` and `speech` do not import each other.
 
 ## Hosting the UI separately (Vercel)
 

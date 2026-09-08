@@ -24,11 +24,12 @@ from src.api.v1.schemas import (
     ResetResponse,
     TtsRequest,
 )
-from src.chatbot import transform
 from src.chatbot.chat import Chat
-from src.chatbot.client import asr_client, tts_client
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
+from src.speech import transform
+from src.speech.asr import asr_client
+from src.speech.tts import tts_client
 
 logger = get_logger(__name__)
 

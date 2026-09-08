@@ -2,7 +2,7 @@
 
 import re
 
-from src.chatbot.transform.common import collapse_space
+from src.speech.transform.common import collapse_space
 
 _CODE_FENCE = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE = re.compile(r"`([^`]+)`")

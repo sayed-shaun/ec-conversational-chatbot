@@ -6,7 +6,7 @@ is either read out as a word or swallowed as a glitch, so it goes.
 
 import re
 
-from src.chatbot.transform.common import collapse_space
+from src.speech.transform.common import collapse_space
 
 # The slash is the one that changes meaning: "উপজেলা/থানা" means "or", and that
 # is how it should sound.
