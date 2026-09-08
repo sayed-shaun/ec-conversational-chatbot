@@ -60,18 +60,18 @@ def _safe_id(turn_id: str) -> str:
     return "".join(keep)[:64] or "unknown"
 
 
-# Characters a filename must not carry. The first group would break the path
-# outright; the rest are illegal on Windows, and these files get copied around.
 _FORBIDDEN = re.compile(r'[/\\\x00-\x1f<>:"|?*]')
 
-# Bengali is three bytes a character in UTF-8, so a generous character count
-# would still overrun the 255-byte limit on a filename component once the
-# timestamp and id are added.
 _SLUG_BYTES = 90
 
 
 def _slug(text: str) -> str:
-    """Turn a question into something safe, readable and short enough."""
+    """Turn a question into something safe, readable and short enough.
+
+    The byte budget matters because Bengali is three bytes a character in
+    UTF-8: a generous character count would still overrun a filename
+    component's 255-byte limit once the timestamp and id are appended.
+    """
     text = _FORBIDDEN.sub("", text or "")
     text = re.sub(r"\s+", "-", text.strip())
     text = re.sub(r"-{2,}", "-", text).strip("-.")
@@ -80,24 +80,29 @@ def _slug(text: str) -> str:
     return text.strip("-.") or "no-text"
 
 
-# turn_id -> filename stem, so the halves of one turn agree on where to write.
-# Bounded because a long-running server would otherwise remember every turn it
-# has ever seen; a dropped entry costs one directory lookup, nothing more.
 _stems: dict = {}
 _STEMS_MAX = 2000
 
 
 def _stem(turn_id: str, question: str = None) -> str:
-    """The filename (without extension) for this turn."""
+    """The filename, without extension, for this turn.
+
+    Both halves of a spoken turn must agree on where to write, so stems are
+    cached by turn id. The cache is bounded, since a long-running server
+    would otherwise remember every turn it had ever seen; a dropped entry
+    costs one directory lookup.
+
+    When the question is absent this is a later half of a turn this process
+    did not start, after a restart or a cache rollover. The short id is in
+    the filename for exactly that case: the stem is recovered rather than
+    the turn being split across two records.
+    """
     tid = _safe_id(turn_id)
     cached = _stems.get(tid)
     if cached:
         return cached
 
     short = tid[:8]
-    # A later half of a turn this process did not start -- after a restart, or
-    # once the cache has rolled over. The short id is in the name for exactly
-    # this: recover the stem rather than split the turn across two records.
     if question is None:
         found = glob.glob(os.path.join(settings.TRACE_DIR, f"*_{short}.json"))
         if found:
@@ -105,8 +110,6 @@ def _stem(turn_id: str, question: str = None) -> str:
             _stems[tid] = stem
             return stem
 
-    # Local time, punctuated, so the name reads as a date and matches the
-    # clock of whoever is looking at the directory. Still sorts oldest-first.
     stamp = f"{datetime.now(timezone.utc).astimezone():%Y-%m-%d_%H-%M-%S}"
     stem = f"{stamp}_{_slug(question)}_{short}" if question else f"{stamp}_{short}"
     if len(_stems) >= _STEMS_MAX:
@@ -126,10 +129,6 @@ def _root(*subdirs: str) -> str:
     return path
 
 
-# Field order in the written JSON: when it happened and how long it took,
-# then the conversation itself, then the detail behind it. A person reading a
-# record should get the answer from the first four lines and never have to
-# scroll for it.
 _ORDER = (
     "when",
     "mode",
@@ -156,15 +155,17 @@ def _write_atomic(path: str, data: bytes) -> None:
 
     A reader tailing the log never sees a half-written record, and a crash
     mid-write leaves the previous version rather than a truncated one.
+
+    The explicit chmod is required: mkstemp creates 0600, and this process
+    runs as root inside the container while the directory is a bind mount
+    from the host, which would leave every trace unreadable to the person
+    who wants to read it.
     """
     directory = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
-        # mkstemp creates 0600, and this runs as root inside the container
-        # while the directory is a bind mount from the host -- which would
-        # leave every trace unreadable to the person who wants to read it.
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
@@ -197,7 +198,7 @@ def _when(dt: datetime = None) -> str:
     the four timestamps in a record harder to compare.
     """
     dt = (dt or datetime.now(timezone.utc)).astimezone()
-    offset = dt.strftime("%z")  # +0600
+    offset = dt.strftime("%z")
     return dt.strftime("%Y-%m-%d %H:%M:%S ") + f"{offset[:3]}:{offset[3:]}"
 
 
@@ -355,11 +356,6 @@ def record_tts(
 
         path = os.path.join(root, f"{stem}.json")
         record = _touch(_load(path), turn_id, session_id, "voice")
-        # Only when it differs from the reply. The browser strips markdown and
-        # spells numbers out before speaking, so the two usually match -- and
-        # repeating a long answer verbatim is the kind of noise that makes a
-        # record tiring to read. When they do differ, that difference is
-        # exactly what you came to the file for.
         if text.strip() != (record.get("replied") or "").strip():
             record["spoken"] = text
         else:
@@ -446,7 +442,6 @@ def purge_expired(ttl_days: int = None) -> int:
             except OSError:
                 logger.warning("could not remove expired trace %s", path)
 
-    # A stem cached in this process may now point at a file that is gone.
     if removed:
         _stems.clear()
     return removed

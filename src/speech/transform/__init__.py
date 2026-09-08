@@ -92,11 +92,12 @@ def for_speech(text: str) -> str:
     stages, most accurate first: the known-term table, then letter-by-letter
     spelling, then removal. Punctuation last, because every stage above emits
     commas and daṛis of its own.
+
+    The language is decided before anything is rewritten. numbers_for_speech
+    emits Bangla number words, so testing for Bengali afterwards reports yes
+    for an English reply containing a fee, and the Latin stages would then
+    delete the English answer.
     """
-    # Decided up front, on the original: numbers_for_speech writes Bangla
-    # number words, so asking "is this Bengali?" afterwards says yes for an
-    # English reply containing a fee -- and the Latin rules would then delete
-    # the answer.
     is_bengali = has_bengali(text)
 
     out = strip_markdown(text)

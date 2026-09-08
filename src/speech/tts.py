@@ -48,13 +48,17 @@ class TtsClient:
     def _payload(
         input_text: str, voice: str, response_format: str, description: str
     ) -> dict:
+        """Build the synthesis request body.
+
+        `description` is included only when set: the service rejects some
+        fields given as empty strings, and omitting an unset optional
+        field is the safer default.
+        """
         payload = {
             "input": input_text,
             "voice": voice,
             "response_format": response_format,
         }
-        # Only sent when set: the service rejects some fields as empty strings,
-        # and an absent optional field is the safer default.
         if description:
             payload["description"] = description
         return payload

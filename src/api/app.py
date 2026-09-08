@@ -119,6 +119,14 @@ async def lifespan(application: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """Build the FastAPI application.
+
+    expose_headers is required for the streaming TTS route: response
+    headers are not readable by cross-origin JavaScript however permissive
+    allow_headers is, since that governs the request. Without it a browser
+    on another origin cannot read the PCM sample rate and would play the
+    stream at a guessed one.
+    """
     application = FastAPI(title="EC Conversational Chatbot", version="1.0.0", lifespan=lifespan)
 
     origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
@@ -127,11 +135,6 @@ def create_app() -> FastAPI:
         allow_origins=origins,
         allow_methods=["*"],
         allow_headers=["*"],
-        # Without this the browser hides these from JS on a cross-origin
-        # deploy (the UI on Vercel, this API elsewhere), and the streamed PCM
-        # would be played at a guessed sample rate. Response headers are not
-        # readable by default however permissive allow_headers is -- that
-        # governs the REQUEST.
         expose_headers=["x-audio-sample-rate", "x-audio-channels", "x-audio-format"],
     )
 

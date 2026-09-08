@@ -1,8 +1,9 @@
 """Numbers as a voice says them.
 
-Bangla is not built like English here: it has a distinct word for every number
-up to ninety-nine rather than composing tens plus ones, and it groups large
-numbers as crore/lakh/thousand instead of thousands. Both need lookup tables.
+Bangla is not built like English here: it has a distinct word for every
+number up to ninety-nine rather than composing tens plus ones, and it groups
+large numbers as crore/lakh/thousand instead of thousands. Both require full
+lookup tables rather than composition.
 
 The model is deliberately left free to write digits. Asking it to spell numbers
 out itself was tried and reverted: it gets the VALUE right with digits, but
@@ -20,8 +21,6 @@ def normalize_digits(text: str) -> str:
     return text.translate(_BN_TO_EN)
 
 
-# Bangla has a distinct word for every number 0-99 (not composed from tens plus
-# ones like English), so this has to be a full lookup table.
 BN_TWO_DIGIT = [
     "শূন্য",
     "এক",
@@ -188,16 +187,19 @@ def bangla_ordinal(n: int) -> str:
     return number_to_bangla_words(n) + "তম"
 
 
-# Days of the month: 1st-4th are irregular idioms, 5th onward is regular
-# (cardinal word plus whichever suffix the source text already used).
 BN_DATE_SPECIAL = {1: "পয়লা", 2: "দোসরা", 3: "তেসরা", 4: "চৌঠা"}
 
 
 def bangla_date_ordinal(n: int, suffix: str) -> str:
+    """A day of the month, spoken.
+
+    The 1st to 4th are irregular idioms; the 5th onward is the cardinal word
+    plus whichever suffix the source text used. পঁচিশ + শে would double the
+    শ, so the real word elides it to পঁচিশে.
+    """
     if n in BN_DATE_SPECIAL:
         return BN_DATE_SPECIAL[n]
     word = number_to_bangla_words(n)
-    # পঁচিশ + শে would double the শ; the real word elides it to পঁচিশে.
     if suffix == "শে" and word.endswith("শ"):
         return word + "ে"
     return word + suffix
@@ -297,7 +299,6 @@ def numbers_for_speech(text: str, bengali: bool = True) -> str:
     out = _ORDINAL.sub(lambda m: bangla_ordinal(int(normalize_digits(m.group(1)))), out)
     out = _EN_ORDINAL.sub(lambda m: english_ordinal(int(m.group(1))), out)
 
-    # Said digit by digit: a helpline or an ID is dictation, not a quantity.
     out = _LONG_RUN.sub(lambda m: digit_by_digit(m.group(0)), out)
     out = _LABEL_THEN_NUM.sub(
         lambda m: m.group(1) + " " + digit_by_digit(m.group(2)), out
@@ -312,7 +313,6 @@ def numbers_for_speech(text: str, bengali: bool = True) -> str:
         lambda m: digit_by_digit_english(m.group(1)) + " ", out
     )
 
-    # Whatever plain digit runs remain: read as a magnitude.
     if bengali:
         out = _ANY_NUMBER.sub(
             lambda m: number_to_bangla_words(int(normalize_digits(m.group(0)))), out

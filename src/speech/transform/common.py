@@ -6,17 +6,19 @@ module instead, so each file can be read on its own.
 
 import re
 
-# Presence of Bengali, not majority: "Google Play Store থেকে NID Wallet অ্যাপ"
-# has more Latin letters than Bengali and is still a Bengali sentence.
 _BENGALI = re.compile(r"[ঀ-৿]")
 
-# Sentence terminators, the Bengali daṛi included.
 SENTENCE_SPLIT = re.compile(r"(?<=[।.!?])")
 
 _SPACE = re.compile(r"\s+")
 
 
 def has_bengali(text: str) -> bool:
+    """Whether any Bengali appears in `text`.
+
+    Presence, not majority: "Google Play Store থেকে NID Wallet অ্যাপ" has
+    more Latin letters than Bengali and is still a Bengali sentence.
+    """
     return bool(_BENGALI.search(text or ""))
 
 

@@ -18,21 +18,21 @@ from typing import Iterable, List
 
 from src.chatbot.tools import TOOLS
 
-# Sentence terminators, Bengali daṛi included. Kept as a character class so a
-# run of them ("...!") stays attached to the sentence it closes.
 _TERMINATORS = "।.!?\n"
 _SENTENCE_SPLIT = re.compile(rf"(?<=[{_TERMINATORS}])")
 
 
 def _tool_names() -> List[str]:
-    """Every name the model could be told about, newest schema first."""
+    """Every name the model could be told about, newest schema first.
+
+    Retired names stay on the list because a transcript checkpointed
+    before a tool was renamed can still mention the old one.
+    """
     names = [
         t["function"]["name"]
         for t in TOOLS
         if t.get("type") == "function" and t.get("function", {}).get("name")
     ]
-    # A renamed tool can still surface from a checkpointed transcript written
-    # before the rename, so retired names stay on the list.
     names += ["search_faq", "health"]
     return names
 
@@ -65,8 +65,6 @@ def scrub(text: str) -> str:
         return text or ""
 
     kept = [s for s in _SENTENCE_SPLIT.split(text) if not mentions_tool(s)]
-    # Sentences carry their own trailing space, so rejoining needs no glue;
-    # only the seams left by a removed sentence need collapsing.
     return re.sub(r"[ \t]{2,}", " ", re.sub(r"\n{3,}", "\n\n", "".join(kept))).strip()
 
 
@@ -100,13 +98,9 @@ class StreamScrubber:
         return self._take(complete)
 
     def _take(self, text: str) -> str:
-        # scrub() returns clean text untouched, so a chunk starting after a
-        # sentence break still carries its leading space; drop it here and
-        # let the seam logic below decide the spacing.
         out = scrub(text).lstrip()
         if not out:
             return ""
-        # Rejoin across emissions without gluing two sentences together.
         if self.emitted and not self.emitted[-1].isspace():
             out = " " + out
         self.emitted += out

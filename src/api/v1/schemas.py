@@ -21,16 +21,22 @@ class SearchParams(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    """One turn of a conversation.
+
+    `mode` says which surface asked, so the engine can select the matching
+    system prompt. It is per request rather than per session because the UI
+    keeps one session id whether the user types or talks, and it defaults to
+    "text" so a caller predating the field behaves as before.
+
+    `turn_id` groups this turn's calls in the trace. A typed turn is this
+    request alone; a spoken turn is ASR, then this, then TTS, all sharing the
+    id.
+    """
+
     session_id: Optional[str] = None
     message: str
     params: Optional[SearchParams] = None
-    # Which surface asked, so the engine can pick the matching system prompt
-    # (see src/chatbot/prompt.py). Per-request rather than per-session: the UI
-    # keeps one session id whether the user types or talks. Defaults to "text",
-    # so a caller that predates this field behaves exactly as before.
     mode: Literal["text", "voice"] = "text"
-    # Groups this turn's calls in the trace. A typed turn is just this one
-    # request; a spoken turn is ASR, then this, then TTS, all sharing the id.
     turn_id: Optional[str] = None
 
 
@@ -52,19 +58,22 @@ class ResetResponse(BaseModel):
 
 class TtsRequest(BaseModel):
     """Mirrors the shape the browser already sends to the TTS service's own
-    OpenAI-style /v1/audio/speech, so the frontend barely changes."""
+    OpenAI-style /v1/audio/speech, so the frontend barely changes.
+
+    The service streams only as raw PCM, since a WAV header must declare a
+    total length that is unknown until the last clause is synthesised. The
+    route swaps the format accordingly, so a caller only asks for streaming
+    and need not know that.
+
+    `turn_id` ties this reply to the ASR request that prompted it, so both
+    halves land in one trace record.
+    """
 
     input: str
     voice: str = "Aditi"
     response_format: str = "wav"
-    # The service streams only as raw PCM -- a WAV header has to declare a
-    # total length that is not known until the last clause is synthesised. The
-    # route below swaps the format accordingly, so a caller only asks for
-    # streaming and does not have to know that.
     stream: bool = False
     description: str = ""
-    # Ties this reply to the ASR request that prompted it, so the two halves
-    # land in one record. See src/api/trace.py.
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
 

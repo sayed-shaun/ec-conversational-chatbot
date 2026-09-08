@@ -245,7 +245,6 @@ class Chat:
                     yield {"type": "token", "text": tail}
                 reply_text = scrubber.emitted.strip()
                 if not reply_text:
-                    # the whole reply was plumbing talk; say something useful
                     reply_text = FALLBACK_REPLY
                     yield {"type": "token", "text": reply_text}
                 self.history.append({"role": "assistant", "content": reply_text})

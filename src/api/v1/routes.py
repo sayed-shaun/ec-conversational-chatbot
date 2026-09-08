@@ -84,8 +84,6 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
 
     async def events():
         yield _sse({"type": "start", "session_id": session_id})
-        # Collected on the way past so the finished turn can be traced without
-        # buffering it: the browser still receives each event as it happens.
         started = time.perf_counter()
         reply = ""
         tools: list = []
@@ -215,10 +213,12 @@ async def tts(req: TtsRequest) -> Response:
     Vercel) would have the request blocked by the browser otherwise. This
     app's own CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
     other.
+
+    Every caller receives speakable text, not just the browser: markdown
+    removed, digits read as Bangla words, initialisms respelled. This ran in
+    the page previously, which left the endpoint reading asterisks aloud to
+    anyone else.
     """
-    # Every caller gets speakable text, not just the browser: markdown out,
-    # digits into Bangla words, initialisms respelled. This used to run in the
-    # page, which left the endpoint reading asterisks aloud to anyone else.
     req.input = transform.for_speech(req.input)[: settings.TTS_MAX_CHARS]
 
     if req.stream:
@@ -250,10 +250,6 @@ async def tts(req: TtsRequest) -> Response:
     return Response(content=audio, media_type=content_type)
 
 
-# Describe the PCM on the wire. The browser is handed headerless samples, so
-# without these it cannot know the rate or width to play them at; they are
-# forwarded from the upstream response rather than hardcoded, so a change of
-# voice or model on the service does not silently detune playback here.
 _PCM_HEADERS = ("x-audio-sample-rate", "x-audio-channels", "x-audio-format")
 
 
@@ -268,6 +264,16 @@ async def _stream_tts(req: TtsRequest) -> StreamingResponse:
     An upstream failure is only detectable before the first chunk -- once a
     200 and some bytes have gone to the browser the status line is spent, so a
     mid-stream error can only end the audio early, and the client falls back.
+
+    The x-audio-* headers are forwarded from the upstream response rather
+    than hardcoded: the browser is handed headerless samples and cannot
+    otherwise know the rate or width to play them at, and a change of voice
+    or model on the service would silently detune playback here.
+
+    When tracing is on the samples are teed while relaying and written once
+    the stream ends. Recording before sending would buffer the whole reply
+    and give up the time-to-first-sound this route exists for; the buffer is
+    bounded by TTS_MAX_CHARS on the client.
     """
     stream_cm = tts_client.stream(req.input, req.voice, req.description)
     try:
@@ -281,11 +287,6 @@ async def _stream_tts(req: TtsRequest) -> StreamingResponse:
 
     headers = {k: resp.headers[k] for k in _PCM_HEADERS if k in resp.headers}
 
-    # Tee the samples on their way past. The reply cannot be recorded before
-    # it is sent -- that would buffer the whole thing and give up the
-    # time-to-first-sound this route exists for -- so it is collected while
-    # relaying and written once the stream ends. Bounded by TTS_MAX_CHARS on
-    # the client, a few megabytes at worst.
     recording = bytearray() if req.turn_id and trace.enabled() else None
     started = time.perf_counter()
 
