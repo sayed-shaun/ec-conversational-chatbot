@@ -70,6 +70,29 @@ t('inline numbers',  '1. একাউন্ট করুন। ২. লগইন
                      h => n(h,'li') === 3 && !h.includes('*') ? [] : ['expected 3 li, got ' + n(h,'li')]);
 t('bullet not italic','*   **ভোট:** করুন।',            h => h.includes('<em>') ? ['bullet italicised'] : []);
 
+console.log('--- group headings');
+t('bold-only item becomes a heading',
+  '*   **৩ বছর পর্যন্ত সংশোধনের জন্য:**\n*   অনলাইন জন্ম নিবন্ধন সনদ।\n*   পাসপোর্ট।\n*   **৩ বছর এর বেশি সংশোধনের ক্ষেত্রে:**\n*   স্বামীর এনআইডি।\n*   ওয়ারিশান সনদ।',
+  h => {
+    const groups = (h.match(/class="list-group"/g) || []).length;
+    const problems = [];
+    if (groups !== 2) problems.push('expected 2 group headings, got ' + groups);
+    if (n(h,'ul') !== 2) problems.push('expected 2 <ul>, got ' + n(h,'ul'));
+    if (n(h,'li') !== 4) problems.push('expected 4 <li>, got ' + n(h,'li'));
+    if (h.includes('<ul></ul>')) problems.push('empty <ul> emitted');
+    return problems;
+  });
+t('label WITH a body stays a bullet',
+  '*   **নাগরিকত্ব সনদ:** চেয়ারম্যানের সনদ।',
+  h => (n(h,'li') === 1 && h.includes('<strong>নাগরিকত্ব সনদ:</strong>') && !h.includes('list-group'))
+        ? [] : ['should remain one <li> with a bold label']);
+t('bold item without a colon stays a bullet',
+  '*   **শুধু গাঢ় লেখা**\n*   পরের আইটেম',
+  h => (n(h,'li') === 2 && !h.includes('list-group')) ? [] : ['no colon, so not a heading']);
+t('nested bold-only item stays a bullet',
+  '*   বাইরের\n  *   **ভিতরের গাঢ়:**',
+  h => h.includes('list-group') ? ['nested item wrongly promoted'] : []);
+
 console.log('--- must not change');
 t('fee prose',       'ফি প্রথমবার ২৩০ টাকা। ২য় বার ৩৪৫ টাকা। পরবর্তীতে ৫৭৫ টাকা।',
                      h => n(h,'li') === 0 && n(h,'p') === 1 ? [] : ['should stay one <p>']);

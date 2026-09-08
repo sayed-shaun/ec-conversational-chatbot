@@ -31,6 +31,14 @@
   margin: 0 0 0.6em;
 }
 .answer pre code { background: none; border: none; padding: 0; color: inherit; }
+/* A group heading the model wrote as a bullet: it introduces the list under
+   it, so it reads as a label rather than as another item. */
+.answer p.list-group {
+  margin: 0.7em 0 0.3em;
+  font-weight: 700;
+}
+.answer p.list-group:first-child { margin-top: 0; }
+
 /* Constructs the renderer emits that had no styling: tables, quotes,
    thematic breaks, strikethrough, images and task items. */
 .answer table {

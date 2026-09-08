@@ -33,6 +33,24 @@ const INLINE_LIST_ITEM = /(।)[ \t]+(?=(?:[0-9০-৯]+[.)]|[*\-•])[ \t])/g;
 const ORDERED = /^(\s*)([0-9০-৯]+)[.)]\s+(.*)$/;
 const BULLETED = /^(\s*)[-*+•]\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
+
+/*
+ * A list item whose whole content is a bold label ending in a colon is a
+ * group heading the model wrote as a bullet:
+ *
+ *     *   **৩ বছর পর্যন্ত সংশোধনের জন্য:**
+ *     *   অনলাইন জন্ম নিবন্ধন সনদ।
+ *     *   পাসপোর্ট (প্রযোজ্য ক্ষেত্রে)।
+ *
+ * Rendered literally, the heading sits at the same level as the items it
+ * introduces and the grouping is lost. It becomes a heading instead, and the
+ * items after it start a fresh list.
+ *
+ * The label must be the ENTIRE item for this to fire. "**নাগরিকত্ব সনদ:**
+ * চেয়ারম্যানের সনদ।" has a body after the label and stays an ordinary bullet,
+ * which is the common shape and must not be disturbed.
+ */
+const GROUP_HEADING = /^(?:\*\*|__)\s*([^*_]+:)\s*(?:\*\*|__)$/;
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const RULE = /^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/;
 const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
@@ -242,6 +260,15 @@ export function renderMarkdown(source) {
       const indent = (ordered || bulleted)[1].replace(/\t/g, '  ').length;
       const tag = ordered ? 'ol' : 'ul';
       const body = ordered ? ordered[3] : bulleted[2];
+
+      // Checked before any list tag is opened, so a heading does not leave an
+      // empty <ul> behind it.
+      const group = indent === 0 ? body.match(GROUP_HEADING) : null;
+      if (group) {
+        closeLists(0);
+        html.push('<p class="list-group">' + renderInline(group[1]) + '</p>');
+        continue;
+      }
 
       const depth = Math.floor(indent / 2) + 1;
       while (stack.length > depth) html.push('</' + stack.pop().tag + '>');
