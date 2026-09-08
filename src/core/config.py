@@ -47,7 +47,7 @@ class ChatbotSettings(BaseSettings):
 
     LLAMA_REASONING_EFFORT: str = Field(default="")
 
-    MCP_SERVER_URL: str = Field(default="http://ec-faq-mcp:9000/mcp")
+    MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
 
     ASR_TTS_URL: str = Field(default="http://172.31.60.228:8000")
 

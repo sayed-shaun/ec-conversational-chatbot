@@ -1,10 +1,10 @@
 services:
 
-  ec-faq-mcp:
+  ec-conversational-mcp:
     build:
       context: .
       dockerfile: mcp.Dockerfile
-    container_name: ec-faq-mcp
+    container_name: ec-conversational-mcp
     environment:
       TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
@@ -27,16 +27,16 @@ services:
       timeout: 5s
       retries: 5
 
-  ec-faq-chatbot:
+  ec-conversational-chatbot:
     build:
       context: .
       dockerfile: api.Dockerfile
-    container_name: ec-faq-chatbot
+    container_name: ec-conversational-chatbot
     environment:
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
-      MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
+      MCP_SERVER_URL: http://ec-conversational-mcp:9000/mcp
       ASR_TTS_URL: ${ASR_TTS_URL:-http://172.31.60.228:8000}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}
@@ -56,7 +56,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      ec-faq-mcp:
+      ec-conversational-mcp:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -67,7 +67,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: ec-faq-caddy
+    container_name: ec-conversational-caddy
     environment:
       LLAMA_UPSTREAM: ${LLAMA_UPSTREAM:-172.31.60.228:8080}
       EC_LLM_UPSTREAM: ${EC_LLM_UPSTREAM:-172.31.60.228:8006}
@@ -76,13 +76,13 @@ services:
     ports:
       - "${PORT:-9100}:80"
     depends_on:
-      ec-faq-chatbot:
+      ec-conversational-chatbot:
         condition: service_healthy
     restart: unless-stopped
 
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: ec-faq-ngrok
+    container_name: ec-conversational-ngrok
     profiles: [ "public" ]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}

@@ -39,7 +39,7 @@ NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
 
-mcp = FastMCP(name="ec-faq-search")
+mcp = FastMCP(name="ec-conversational-search")
 
 
 @mcp.tool

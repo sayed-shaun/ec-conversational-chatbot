@@ -82,7 +82,7 @@ async def lifespan(application: FastAPI):
 
 
 def create_app() -> FastAPI:
-    application = FastAPI(title="EC FAQ Chatbot", version="1.0.0", lifespan=lifespan)
+    application = FastAPI(title="EC Conversational Chatbot", version="1.0.0", lifespan=lifespan)
 
     origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
     application.add_middleware(

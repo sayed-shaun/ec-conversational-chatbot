@@ -9,7 +9,7 @@ import { el, formatSeconds } from './dom.js';
 import { addRow, addUserMessage, stickToBottom } from './transcript.js';
 import { renderAnswer } from './answer.js';
 
-let sessionId = localStorage.getItem('ec_faq_session_id') || null;
+let sessionId = localStorage.getItem('ec_conversational_session_id') || null;
 
 // Read-only view for voice mode, which tags its ASR and TTS calls with the
 // session they belong to (see src/chatbot/trace.py).
@@ -68,7 +68,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
     switch (ev.type) {
       case 'start':
         sessionId = ev.session_id;
-        localStorage.setItem('ec_faq_session_id', sessionId);
+        localStorage.setItem('ec_conversational_session_id', sessionId);
         break;
 
       case 'reasoning':

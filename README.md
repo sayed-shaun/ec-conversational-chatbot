@@ -38,10 +38,10 @@ docker compose up --build
 | Chat UI | `http://localhost:${PORT}/static/index.html` (PORT default 9100) |
 | API docs | `http://localhost:${PORT}/docs` |
 | Health | `http://localhost:${PORT}/health` |
-| MCP server | internal only — `ec-faq-mcp:9000/mcp` |
+| MCP server | internal only — `ec-conversational-mcp:9000/mcp` |
 
 Both containers share one entrypoint: `python main.py api` / `python main.py
-mcp`. The chatbot waits for `ec-faq-mcp` to report healthy; llama-server isn't
+mcp`. The chatbot waits for `ec-conversational-mcp` to report healthy; llama-server isn't
 gated by compose, so until it's up chat requests return the "call 105" fallback.
 
 ## How it works
@@ -49,17 +49,17 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | Component | Port | Role |
 |---|---|---|
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
-| **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
-| **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
+| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
+| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
 | **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
 
 ```mermaid
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
-    CADDY --> BOT["ec-faq-chatbot<br/>tool-calling loop"]
+    CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
     BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
-    BOT -->|"model asked for search_faq"| MCP["ec-faq-mcp"]
+    BOT -->|"model asked for search_faq"| MCP["ec-conversational-mcp"]
     MCP --> SIM["top_similar API"]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
@@ -234,12 +234,12 @@ successful production deployment, so this is handled — it needs a
 The MCP server isn't published on the host, so call it from inside the network:
 
 ```bash
-docker compose exec ec-faq-chatbot python - <<'PY'
+docker compose exec ec-conversational-chatbot python - <<'PY'
 import asyncio, json
 from fastmcp import Client
 
 async def main():
-    async with Client("http://ec-faq-mcp:9000/mcp") as client:
+    async with Client("http://ec-conversational-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
         result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))
