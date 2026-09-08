@@ -1,6 +1,9 @@
 .answer p { margin: 0 0 0.6em; }
 .answer p:last-child { margin-bottom: 0; }
 .answer ul, .answer ol { margin: 0 0 0.6em; padding-left: 1.4em; }
+/* The model writes "1." as readily as "১."; number the markers in
+   Bengali either way, since the surrounding text is Bengali. */
+.answer ol { list-style-type: bengali; }
 .answer li { margin-bottom: 0.2em; }
 .answer h3, .answer h4, .answer h5, .answer h6 {
   margin: 0.6em 0 0.3em;
@@ -28,6 +31,52 @@
   margin: 0 0 0.6em;
 }
 .answer pre code { background: none; border: none; padding: 0; color: inherit; }
+/* Constructs the renderer emits that had no styling: tables, quotes,
+   thematic breaks, strikethrough, images and task items. */
+.answer table {
+  border-collapse: collapse;
+  margin: 0 0 0.6em;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.answer th, .answer td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.answer th { background: var(--green-soft); font-weight: 700; }
+.row.user .answer th, .row.user .answer td { border-color: rgba(255,255,255,0.35); }
+.row.user .answer th { background: rgba(255,255,255,0.18); }
+
+.answer blockquote {
+  margin: 0 0 0.6em;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--green-line);
+  color: var(--muted, inherit);
+}
+.row.user .answer blockquote { border-left-color: rgba(255,255,255,0.5); }
+
+.answer hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.8em 0;
+}
+.row.user .answer hr { border-top-color: rgba(255,255,255,0.35); }
+
+.answer del { text-decoration: line-through; opacity: 0.75; }
+
+.answer img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.2em 0;
+}
+
+.answer li.task { list-style: none; margin-left: -1.1em; }
+.answer li.task input { margin-right: 6px; vertical-align: middle; }
+
 .answer .katex-display { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
 .answer a { color: var(--green-dark); text-decoration: underline; }
 .row.user .answer a { color: #fff; }
