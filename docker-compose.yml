@@ -46,7 +46,7 @@ services:
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
-      TRACE_DIR: ${TRACE_DIR:-/data/tracing}
+      TRACE_DIR: ${TRACE_DIR:-}
       TZ: ${TZ:-Asia/Dhaka}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:

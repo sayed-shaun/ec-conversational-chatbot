@@ -57,7 +57,11 @@ class ChatbotSettings(BaseSettings):
 
     ASR_DUMP_DIR: str = Field(default="")
 
-    TRACE_DIR: str = Field(default="/data/tracing")
+    # Off unless set. Tracing writes the citizen's question, the reply and
+    # both sides of a voice turn as audio, with the question text in the
+    # filename, and never deletes any of it -- so it is enabled
+    # deliberately, for debugging, rather than by default.
+    TRACE_DIR: str = Field(default="")
 
     TTS_MAX_CHARS: int = Field(default=3000, ge=1)
 

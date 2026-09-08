@@ -64,7 +64,7 @@ class TtsRequest(BaseModel):
     stream: bool = False
     description: str = ""
     # Ties this reply to the ASR request that prompted it, so the two halves
-    # land in one record. See src/chatbot/trace.py.
+    # land in one record. See src/api/trace.py.
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
 

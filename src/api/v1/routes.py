@@ -15,6 +15,7 @@ import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
+from src.api import trace
 from src.api.v1.schemas import (
     AsrResponse,
     ChatRequest,
@@ -23,9 +24,9 @@ from src.api.v1.schemas import (
     ResetResponse,
     TtsRequest,
 )
+from src.chatbot import transform
 from src.chatbot.chat import Chat
 from src.chatbot.client import asr_client, tts_client
-from src.chatbot import trace, transform
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
