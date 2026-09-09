@@ -2,11 +2,30 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /*
+   * html and body are pinned (position: fixed), so a scroll that runs past
+   * either end of the transcript chains into a page that cannot move and the
+   * gesture is swallowed -- the list reads as stuck until it is swiped
+   * again. Keep the scroll inside this box.
+   */
+  overscroll-behavior: contain;
+  /* Claim vertical drags outright, so no delay waiting to see if the gesture
+     turns into a horizontal swipe or a zoom. */
+  touch-action: pan-y;
   padding: 18px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+
+/*
+ * Deliberately NOT content-visibility: auto. Skipping the layout of
+ * off-screen rows is the usual fix for a long list, but here it makes the
+ * bottom of the transcript move: a skipped row is costed at its estimate
+ * until it is revealed, so scrolling to the end grows scrollHeight and the
+ * end is no longer where the scroll just went. Measured at 240 rows, the
+ * gap reopened to ~2400px one frame after a successful scroll to bottom.
+ */
 .row { display: flex; gap: 10px; max-width: 100%; }
 .row.user { flex-direction: row-reverse; }
 .row .avatar { width: 30px; height: 30px; font-size: 0.9rem; }
@@ -52,6 +71,7 @@
 .think > summary::before { content: "\25B8"; font-size: 0.65rem; }
 .think[open] > summary::before { content: "\25BE"; }
 .think-body {
+  overscroll-behavior: contain;
   padding: 0 9px 8px;
   max-height: 160px;
   overflow-y: auto;
