@@ -23,12 +23,59 @@ const nearBottom = () =>
  */
 let pinnedToBottom = true;
 
+/*
+ * Whether a finger is on the transcript right now, or was until very
+ * recently.
+ *
+ * A programmatic scrollTop assignment lands on top of a touch drag or its
+ * momentum fling and cancels it: the list stops dead under the finger and
+ * has to be swiped again. On a long conversation that happens on almost
+ * every token, which is what "scrolling gets stuck" is. So auto-scroll
+ * stands down while the reader is driving, and the settle window covers the
+ * momentum that keeps running after the finger has lifted.
+ */
+let touching = false;
+let settleTimer = null;
+const SETTLE_MS = 700;
+
+export const isTouching = () => touching;
+
+messagesEl.addEventListener('touchstart', () => {
+  touching = true;
+  clearTimeout(settleTimer);
+}, { passive: true });
+
+const endTouch = () => {
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => {
+    touching = false;
+    // Catch up on anything that streamed in while the reader was scrolling,
+    // but only if they ended up back at the bottom themselves.
+    stickToBottom();
+  }, SETTLE_MS);
+};
+messagesEl.addEventListener('touchend', endTouch, { passive: true });
+messagesEl.addEventListener('touchcancel', endTouch, { passive: true });
+
 export function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
+/*
+ * Coalesced to one scroll per frame. Tokens arrive far faster than the
+ * screen refreshes, and each assignment forces a synchronous layout of a
+ * transcript that only gets longer -- the jank compounds with the length of
+ * the conversation, exactly where it is least affordable.
+ */
+let pendingScroll = false;
+
 export function stickToBottom() {
-  if (pinnedToBottom) scrollToBottom();
+  if (!pinnedToBottom || touching || pendingScroll) return;
+  pendingScroll = true;
+  requestAnimationFrame(() => {
+    pendingScroll = false;
+    if (pinnedToBottom && !touching) scrollToBottom();
+  });
 }
 
 export function updateJumpButton() {
