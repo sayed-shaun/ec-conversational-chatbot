@@ -1,0 +1,161 @@
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /*
+   * html and body are pinned (position: fixed), so a scroll that runs past
+   * either end of the transcript chains into a page that cannot move and the
+   * gesture is swallowed -- the list reads as stuck until it is swiped
+   * again. Keep the scroll inside this box.
+   */
+  overscroll-behavior: contain;
+  /* Claim vertical drags outright, so no delay waiting to see if the gesture
+     turns into a horizontal swipe or a zoom. */
+  touch-action: pan-y;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/*
+ * Deliberately NOT content-visibility: auto. Skipping the layout of
+ * off-screen rows is the usual fix for a long list, but here it makes the
+ * bottom of the transcript move: a skipped row is costed at its estimate
+ * until it is revealed, so scrolling to the end grows scrollHeight and the
+ * end is no longer where the scroll just went. Measured at 240 rows, the
+ * gap reopened to ~2400px one frame after a successful scroll to bottom.
+ */
+.row { display: flex; gap: 10px; max-width: 100%; }
+.row.user { flex-direction: row-reverse; }
+.row .avatar { width: 30px; height: 30px; font-size: 0.9rem; }
+.row.bot .avatar { background: var(--green-soft); }
+.row.user .avatar { background: var(--green); color: #fff; }
+
+.bubble {
+  max-width: 78%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  line-height: 1.6;
+  font-size: 0.93rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.row.user .bubble {
+  background: var(--green);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.row.bot .bubble {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.think {
+  font-size: 0.78rem;
+  background: #f2f5f4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.think > summary {
+  cursor: pointer;
+  padding: 5px 9px;
+  color: var(--muted);
+  list-style: none;
+  user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.think > summary::-webkit-details-marker { display: none; }
+.think > summary::before { content: "\25B8"; font-size: 0.65rem; }
+.think[open] > summary::before { content: "\25BE"; }
+.think-body {
+  overscroll-behavior: contain;
+  padding: 0 9px 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 0.71rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.tool {
+  border: 1px solid var(--green-line);
+  border-left: 3px solid var(--green);
+  background: var(--green-soft);
+  border-radius: 7px;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+}
+.tool.running {
+  animation: tool-glow 1.2s ease-in-out infinite;
+}
+@keyframes tool-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(15, 107, 69, 0.35); }
+  50%      { box-shadow: 0 0 0 5px rgba(15, 107, 69, 0); }
+}
+.tool > summary {
+  cursor: pointer;
+  padding: 7px 10px;
+  list-style: none;
+  user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.tool > summary::-webkit-details-marker { display: none; }
+.tool > summary::before { content: "\25B8"; font-size: 0.65rem; color: var(--green-dark); }
+.tool[open] > summary::before { content: "\25BE"; }
+.tool-body { padding: 0 10px 8px; }
+.tool-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--green-dark);
+  display: flex; align-items: center; gap: 5px;
+}
+.tool.running .tool-name::after {
+  content: "";
+  width: 9px; height: 9px;
+  border: 2px solid var(--green);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.tool-args {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.71rem;
+  color: #47574f;
+  margin-top: 3px;
+  word-break: break-all;
+}
+.tool-res {
+  display: block;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--green-line);
+  font-size: 0.72rem;
+  font-family: var(--mono);
+}
+.tool-res .ok { color: var(--green-dark); font-weight: 600; }
+.tool-res .weak { color: var(--amber); font-weight: 600; }
+.tool-res .bad { color: var(--red); font-weight: 600; }
+.cands { margin-top: 4px; color: var(--muted); font-size: 0.69rem; }
+.cands div { padding-left: 10px; }
+
+.stream-err { color: var(--red); font-size: 0.78rem; display: block; margin-top: 6px; }
+.timing {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 7px;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+.cursor::after {
+  content: "\258B";
+  animation: blink 1s steps(2, start) infinite;
+  opacity: 0.65;
+}
+@keyframes blink { to { visibility: hidden; } }

@@ -16,7 +16,7 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_faq",
+            "name": "search_ec_services",
             "description": (
                 "Search the EC NID/voter FAQ knowledge base for the closest "
                 "matching question(s) and return the canonical answer plus "
@@ -53,10 +53,10 @@ async def run_tool(
 ) -> dict:
     """Execute one tool call. `params` holds the UI's retrieval overrides,
     which win over whatever top_k the model happened to ask for."""
-    if name == "search_faq":
+    if name == "search_ec_services":
         overrides = dict(params or {})
         top_k = overrides.pop("top_k", None) or args.get("top_k", 10)
-        return await mcp_client.search_faq(
+        return await mcp_client.search_ec_services(
             args.get("question", fallback_question), top_k, **overrides
         )
     logger.warning("model requested unknown tool: %s", name)

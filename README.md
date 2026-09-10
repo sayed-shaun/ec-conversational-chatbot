@@ -53,9 +53,9 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 
 | Component | Port | Role |
 |---|---|---|
-| **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
+| **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/llamacpp/*` and `/ec-llm-service/*` to their upstreams, everything else to the chatbot |
 | **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
-| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
+| **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_ec_services` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
 | **`ec-conversational-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
 | **`pgvector-db`** | `:5432` internal | Postgres + [pgvector](https://github.com/pgvector/pgvector), one `faq_entries` table (tag, question, answer, embedding) |
@@ -64,21 +64,20 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
     CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
-    BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
-    BOT -->|"model asked for search_faq"| MCP["ec-conversational-mcp"]
-    MCP --> SIM["ec-conversational-vector<br/>/top_similar"]
-    SIM --> PG[("pgvector-db<br/>faq_entries")]
+    BOT <-->|"/v1/chat/completions<br/>+ search_ec_services schema"| LLM["llama-server"]
+    BOT -->|"model asked for search_ec_services"| MCP["ec-conversational-mcp"]
+    MCP --> SIM["top_similar API"]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
 ```
 
 **The chatbot orchestrates, not the model.** llama-server never talks to the
-MCP server: it only *asks* for `search_faq` in a `tool_calls` response, and
+MCP server: it only *asks* for `search_ec_services` in a `tool_calls` response, and
 `src/chatbot/chat.py` executes the call, appends the result to the transcript,
 and calls llama-server again — up to `MAX_TOOL_HOPS` times.
 
-The model decides whether a question needs a lookup. If it does, `search_faq`
+The model decides whether a question needs a lookup. If it does, `search_ec_services`
 queries `top_similar`, de-duplicates by `tag`, resolves each tag to its answer,
 and returns the best one with a confidence flag and alternatives. Below
 `CONFIDENCE_THRESHOLD` the system prompt tells the model to admit it doesn't
@@ -111,15 +110,15 @@ in a collapsible block without polluting the answer or the stored history. The
 UI renders each tool call as a chip with its arguments, result, matched tag and
 score, and shows total turn time under each answer.
 
-**Voice input**: the UI records with `MediaRecorder` and posts to `/asr/upload`;
-Caddy proxies `/asr*` to `ASR_URL`, so the browser only talks to this stack's
-own origin.
+**Voice input**: the UI records with `MediaRecorder` and posts to
+`/api/v1/asr`, which the app forwards to `ASR_TTS_URL`, so the browser only
+talks to this stack's own origin.
 
 **Load testing**: `ab`/`wrk` can't measure the SSE endpoint (they see one
 long-lived response). Use `scripts/load_test.py`:
 
 ```bash
-python scripts/load_test.py --url http://172.31.60.228:9100 \
+python scripts/load_test.py --url http://YOUR_HOST:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
@@ -178,7 +177,7 @@ the upstream dataset reaches search without a manual `/index` upload:
 ### Retrieval parameters
 
 The UI sends a `params` object per request. `top_k` is forwarded to
-`top_similar`; the rest are implemented in `search_faq`
+`top_similar`; the rest are implemented in `search_ec_services`
 (`src/mcp/server.py`), since the upstream API accepts only `question` and
 `top_k`.
 
@@ -199,22 +198,24 @@ then `.env`, then the defaults in that file. Names map case-insensitively
 to change a setting. `.env.example` documents the full list; the ones you'll
 actually touch:
 
+No host, endpoint or credential has a default in the code — anything that
+identifies a deployment lives only in `.env`, and the service refuses to start
+if a required one is missing.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
-| `TOP_SIMILAR_API_URL` | `http://ec-conversational-vector:8001/top_similar` | Embedding search API (self-hosted by default) |
-| `VECTOR_EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-large-instruct` | fastembed model; must stay in sync with `VECTOR_EMBEDDING_DIM` |
-| `VECTOR_REINDEX_ENABLED` | `true` | Daily automatic reindex from GitHub; `POST /reindex` still works if `false` |
-| `VECTOR_REINDEX_HOUR_UTC` | `3` | UTC hour the daily reindex runs at |
-| `QUESTION_TAG_CSV_URL` | `…/full_dataset/question_tag.csv` | Question/tag paraphrase source for the daily reindex |
+| `LLAMA_BASE_URL` | **required** | Your llama-server |
+| `TOP_SIMILAR_API_URL` | **required** | Embedding search API |
+| `TAG_ANSWER_URL` | **required** | Knowledge-base dataset |
+| `LLAMA_UPSTREAM`, `EC_LLM_UPSTREAM` | **required with `caddy`** | Upstreams Caddy publishes |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
 | `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
-| `PORT` | `8000` | The only port published on the host |
-| `ASR_URL` | `http://172.31.60.228:8000` | Speech-to-text behind `/asr*` |
+| `PORT` | `9100` | The only port published on the host |
+| `ASR_TTS_URL` | _(required for voice)_ | Speech service for both ASR and TTS |
 
 `src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
 `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.
@@ -222,50 +223,74 @@ actually touch:
 ## Repo layout
 
 ```
-├── main.py               # `python main.py api` | `mcp` | `vector`
-├── Caddyfile             # /asr* → ASR service, rest → chatbot
-├── vercel.json           # build step for hosting static/index.html
-├── scripts/              # load_test.py, point-alias.sh
-├── static/index.html     # chat UI: markup, styles, SSE client, one file
+├── main.py                 # `python main.py api` | `python main.py mcp`
+├── Caddyfile               # /llamacpp/*, /ec-llm-service/* → upstreams, rest → chatbot
+├── vercel.json             # build step for hosting the static UI
+├── scripts/                # load_test.py, point-alias.sh
+├── static/                 # the chat UI, served as-is (no build step)
+│   ├── index.html          # markup only: links css/, loads js/main.js
+│   ├── css/                # base, chat, composer, responsive, answer, voice
+│   └── js/                 # ES modules, entry point main.js
 └── src/
-    ├── core/             # config.py (typed Settings), logger.py
-    ├── api/              # the only place FastAPI is imported
-    │   ├── app.py        # create_app(): static mount, /health, v1 router
-    │   └── v1/           # routes.py (/chat, /chat/stream, /reset), schemas.py
-    ├── chatbot/          # domain logic, no web framework
-    │   ├── chat.py       # one conversation, the tool-calling loop
-    │   ├── checkpointer.py  # SqliteCheckpointer: transcripts + idle expiry
-    │   ├── client.py     # OpenAIClient (llama-server) + McpClient
-    │   ├── prompt.py     # system prompt and canned replies (Bengali)
-    │   └── tools.py      # tool catalogue, dispatch, result summary
-    ├── mcp/              # server.py (search_faq) + tag_answer.json fallback
-    └── vector/           # app.py (/top_similar, /index), db.py, embeddings.py
+    ├── core/               # config.py (typed Settings), logger.py
+    ├── api/                # the only place FastAPI is imported
+    │   ├── app.py          # create_app(): static mount, /health, v1 router
+    │   ├── trace.py        # per-turn record on disk (off unless TRACE_DIR)
+    │   └── v1/             # routes.py (/chat, /chat/stream, /reset), schemas.py
+    ├── chatbot/            # the conversation, no web framework
+    │   ├── chat.py         # one conversation, the tool-calling loop
+    │   ├── checkpointer.py # SqliteCheckpointer: transcripts + idle expiry
+    │   ├── client.py       # OpenAIClient (llama-server) + McpClient
+    │   ├── prompt.py       # system prompt and canned replies (Bengali)
+    │   ├── sanitize.py     # keeps the tool name out of every reply
+    │   └── tools.py        # tool catalogue, dispatch, result summary
+    ├── speech/             # the voice path; a typed turn touches none of it
+    │   ├── asr.py          # audio up, transcript back
+    │   ├── tts.py          # text down, audio back
+    │   └── transform/      # a reply rewritten into something the voice can say
+    │       ├── markup.py       # markdown out
+    │       ├── addresses.py    # URLs said as names, paths dropped
+    │       ├── numbers.py      # digits as quantities, dictation or ordinals
+    │       ├── latin.py        # English rendered, spelt, or removed
+    │       └── punctuation.py  # the marks a voice can say
+    └── mcp/                # server.py (search_ec_services) + tag_answer.json fallback
 ```
 
-Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
-`src/api/`, so `src/chatbot/` can be used or tested without a web server.
+Dependencies run one way: `api → {chatbot, speech} → core`. FastAPI is imported
+only under `src/api/`, so `src/chatbot/` and `src/speech/` can be used or tested
+without a web server. `chatbot` and `speech` do not import each other.
 
 ## Hosting the UI separately (Vercel)
 
-`static/index.html` is self-contained, so it can be deployed on its own while
-the backend keeps running wherever it is. Three requirements:
+`static/` is plain files with no build step, so it can be deployed on its own
+while the backend keeps running wherever it is. Three requirements:
 
 1. **HTTPS backend.** An HTTPS page can't call an HTTP API. Caddy fronts the
    chatbot; an optional `ngrok` service tunnels it without a domain:
 
    ```bash
    docker compose --profile public up -d     # needs NGROK_AUTHTOKEN in .env
+   ```
+
+   It's a separate profile so a plain `docker compose up` never needs an ngrok
+   account.
+
+   Set `NGROK_DOMAIN` to a reserved domain (free accounts get one, from
+   https://dashboard.ngrok.com/domains) and the URL survives restarts. Without
+   it the tunnel is ephemeral and every restart hands out a new URL, which
+   means redoing step 2 each time. Read the current one back with:
+
+   ```bash
    curl -s http://localhost:4040/api/tunnels | python3 -c \
      "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
    ```
 
-   It's a separate profile so a plain `docker compose up` never needs an ngrok
-   account. On the free tier the URL changes every restart — hence step 2.
-
-2. **`API_BASE` must point at that URL.** The file defaults to `''`
-   (same-origin), which this repo's own deployment needs. `vercel.json` patches
-   that line at build time from an `NGROK_URL` env var set in the Vercel project,
-   so the tunnel URL never lands in the repo. Redeploy when it changes.
+2. **`API_BASE` must point at that URL.** `static/js/config.js` defaults it to
+   `''` (same-origin), which this repo's own deployment needs. `vercel.json`
+   patches that line at build time from an `NGROK_URL` env var set in the Vercel
+   project, so the tunnel URL never lands in the repo. With a reserved domain
+   this is set once; with an ephemeral tunnel it has to be re-pointed and
+   redeployed on every restart.
 
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 
@@ -292,7 +317,7 @@ from fastmcp import Client
 async def main():
     async with Client("http://ec-conversational-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
-        result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
+        result = await client.call_tool("search_ec_services", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))
 
 asyncio.run(main())

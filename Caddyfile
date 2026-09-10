@@ -1,15 +1,26 @@
 :80 {
-	handle /asr* {
-		reverse_proxy {$ASR_URL:http://172.31.60.228:8006}
+	handle /llamacpp {
+		redir * /llamacpp/
+	}
+	handle_path /llamacpp/* {
+		reverse_proxy {$LLAMA_UPSTREAM} {
+			# Token streaming: without this Caddy buffers the SSE body and
+			# the reply arrives in one lump at the end.
+			flush_interval -1
+		}
 	}
 
-	handle /ocr* {
-		uri strip_prefix /ocr
-		reverse_proxy {$OCR_URL:http://172.31.60.228:8006}
+	handle /ec-llm-service {
+		redir * /ec-llm-service/
+	}
+	handle_path /ec-llm-service/* {
+		reverse_proxy {$EC_LLM_UPSTREAM} {
+			flush_interval -1
+		}
 	}
 
 	handle {
-		reverse_proxy {$CHATBOT_URL:ec-conversational-chatbot:8000} {
+		reverse_proxy ec-conversational-chatbot:8000 {
 			flush_interval -1
 		}
 	}

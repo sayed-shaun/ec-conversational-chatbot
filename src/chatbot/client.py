@@ -1,13 +1,14 @@
 """
-Outbound clients.
+Outbound clients for the conversation itself.
 
-Two things this service talks to, one class each:
+Two things this service talks to, one class each. The speech services live in
+src/speech, since nothing in a typed turn touches them:
 
 - `OpenAIClient` — the `openai` SDK pointed at llama-server's
   OpenAI-compatible /v1 endpoint, for both one-shot and streaming
   completions.
 - `McpClient` — the EC FAQ MCP server (Streamable HTTP, FastMCP), for the
-  `search_faq` tool.
+  `search_ec_services` tool.
 
 Module-level `openai_client` and `mcp_client` instances are built from
 settings at import, so callers just use them.
@@ -128,11 +129,11 @@ class McpClient:
             logger.exception("MCP server call failed")
             return {"error": f"could not reach MCP server: {exc}"}
 
-    async def search_faq(self, question: str, top_k: int = 10, **overrides) -> dict:
-        """Search the FAQ knowledge base via the MCP `search_faq` tool."""
+    async def search_ec_services(self, question: str, top_k: int = 10, **overrides) -> dict:
+        """Search the FAQ knowledge base via the MCP `search_ec_services` tool."""
         arguments = {"question": question, "top_k": top_k}
         arguments.update({k: v for k, v in overrides.items() if v is not None})
-        return await self.call_tool("search_faq", arguments)
+        return await self.call_tool("search_ec_services", arguments)
 
 
 openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)

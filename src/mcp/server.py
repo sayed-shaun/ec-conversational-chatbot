@@ -1,7 +1,7 @@
 """
 EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
 --------------------------------------------------------------------------
-Exposes a single MCP tool, `search_faq`, that:
+Exposes a single MCP tool, `search_ec_services`, that:
 
   1. Sends the user's question to the `top_similar` embedding-search API
      (self-hosted by the ec-conversational-vector/pgvector service by
@@ -40,11 +40,11 @@ NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
 
-mcp = FastMCP(name="ec-faq-search")
+mcp = FastMCP(name="ec-conversational-search")
 
 
 @mcp.tool
-def search_faq(
+def search_ec_services(
     question: str,
     top_k: int = 10,
     min_score: float | None = None,
@@ -141,7 +141,7 @@ def search_faq(
     return {
         "input_question": data.get("input_question", question),
         "confident": confident,
-        "confidence_threshold": threshold,
+        "CONFIDENCE_THRESHOLD": threshold,
         "min_score_ratio": min_score_ratio,
         "runner_up_score": runner_up,
         "best_tag": best["tag"],

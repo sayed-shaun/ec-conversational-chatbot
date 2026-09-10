@@ -1,0 +1,94 @@
+:root {
+  --green: #0f6b45;
+  --green-dark: #0a4f33;
+  --green-soft: #eaf4ef;
+  --green-line: #cfe4d9;
+  --red: #f42a41;
+  --amber: #b26a00;
+  --bg: #f4f6f5;
+  --panel: #ffffff;
+  --text: #1c2521;
+  --muted: #5f6f68;
+  --line: #e2e7e4;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+/*
+ * position: fixed, not just overflow: hidden -- on iOS Safari, focusing an
+ * input auto-scrolls the *page* to keep it above the keyboard, and that
+ * scroll happens at the visual-viewport level, bypassing normal overflow
+ * rules. Pinning html/body removes any document-level scroll surface for
+ * it to act on; syncAppHeight() below also snaps window scroll back to
+ * (0, 0) as a second line of defense.
+ */
+html, body { height: 100%; overflow: hidden; position: fixed; width: 100%; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Noto Sans Bengali", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  /*
+   * dvh, not vh: on mobile browsers 100vh includes the area behind the
+   * URL bar, so the app renders taller than the visible screen and the
+   * composer at the bottom ends up off-screen -- unreachable, because
+   * html/body have overflow: hidden. dvh tracks the actually-visible
+   * height. The vh line stays first as a fallback for old browsers.
+   */
+  height: calc(100vh - 32px);
+  height: calc(100dvh - 32px);
+  height: calc(var(--app-h, 100dvh) - 32px);
+  max-width: 860px;
+  margin: 16px auto;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  /* Positioning context for .jump-btn, which floats over the transcript. */
+  position: relative;
+
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 40, 30, 0.05),
+              0 12px 32px rgba(15, 40, 30, 0.08);
+}
+
+.header {
+  background: var(--green);
+  color: #fff;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 1.15rem;
+  flex: none;
+}
+.avatar-bot { background: rgba(255,255,255,0.18); }
+.header-text { min-width: 0; }
+.header-title {
+  font-size: 1rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.header-subtitle { font-size: 0.75rem; opacity: 0.85; }
+.header-actions { display: flex; gap: 8px; }
+.icon-btn {
+  background: rgba(255,255,255,0.15);
+  border: none; color: #fff;
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.28); }
+.icon-btn svg { width: 17px; height: 17px; }

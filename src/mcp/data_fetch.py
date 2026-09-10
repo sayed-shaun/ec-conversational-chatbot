@@ -61,7 +61,7 @@ def _load_tag_answers() -> dict:
     """Load the knowledge base at startup: live from GitHub, with the bundled
     copy as a fallback so a network blip can't take the server down.
 
-    A successful live fetch is also written through to tag_answer_path, so
+    A successful live fetch is also written through to TAG_ANSWER_PATH, so
     every restart syncs the on-disk copy immediately rather than waiting for
     the next periodic refresh tick."""
     try:
@@ -88,12 +88,12 @@ TAG_ANSWERS = _load_tag_answers()
 
 
 def _refresh_tag_answers() -> None:
-    """Re-fetch tag_answer_url and update TAG_ANSWERS in place, also
+    """Re-fetch TAG_ANSWER_URL and update TAG_ANSWERS in place, also
     overwriting the local fallback copy so a later restart sees it too."""
     try:
         data = _fetch_tag_answers()
     except Exception:
-        logger.warning("periodic tag_answer_url refetch failed", exc_info=True)
+        logger.warning("periodic TAG_ANSWER_URL refetch failed", exc_info=True)
         return
 
     if data == TAG_ANSWERS:
@@ -101,7 +101,7 @@ def _refresh_tag_answers() -> None:
 
     TAG_ANSWERS.clear()
     TAG_ANSWERS.update(data)
-    logger.info("tag_answer_url refreshed (%d tags)", len(data))
+    logger.info("TAG_ANSWER_URL refreshed (%d tags)", len(data))
     _write_local_copy(data)
 
 
@@ -112,10 +112,10 @@ def _refresh_loop() -> None:
 
 
 def start_refresh_thread() -> None:
-    """Start polling for tag_answer_url updates, if configured to."""
+    """Start polling for TAG_ANSWER_URL updates, if configured to."""
     if settings.TAG_ANSWER_REFRESH_SECONDS <= 0:
         return
     threading.Thread(target=_refresh_loop, daemon=True).start()
     logger.info(
-        "refreshing tag_answer_url every %ss", settings.TAG_ANSWER_REFRESH_SECONDS
+        "refreshing TAG_ANSWER_URL every %ss", settings.TAG_ANSWER_REFRESH_SECONDS
     )

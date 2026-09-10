@@ -15,6 +15,7 @@ from typing import AsyncIterator, Dict, List
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
 from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
+from src.chatbot.sanitize import StreamScrubber, scrub
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -34,11 +35,26 @@ class Chat:
         """A fresh transcript: just the system prompt."""
         return [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    def refresh_prompt(self) -> None:
+        """Put the current system prompt at the head of the transcript.
+
+        Done on every turn rather than once when the session began, because the
+        transcript is checkpointed to SQLite: a prompt frozen at session
+        creation would outlive an edit to prompt.py, and a running session
+        would keep answering under wording that no longer exists in the repo.
+        """
+        if self.history and self.history[0].get("role") == "system":
+            self.history[0] = {"role": "system", "content": SYSTEM_PROMPT}
+        else:
+            self.history.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+
     @classmethod
     async def load(cls, session_id: str) -> "Chat":
         """Restore a conversation from the checkpointer, or start a new one."""
         history = await checkpointer.load(session_id)
-        return cls(session_id, history or cls.new_history())
+        chat = cls(session_id, history or cls.new_history())
+        chat.refresh_prompt()
+        return chat
 
     @staticmethod
     async def reset(session_id: str) -> None:
@@ -72,6 +88,21 @@ class Chat:
         self.trim()
         await checkpointer.save(self.session_id, self.history)
 
+    def _clean(self, text: str) -> str:
+        """Strip any tool-name talk out of a finished reply.
+
+        The model is asked not to mention the tool, but does anyway often
+        enough that the prompt cannot be the only line of defence. If that
+        removes the entire reply there is nothing worth showing, so the
+        canned fallback stands in.
+        """
+        cleaned = scrub(text).strip()
+        if cleaned != (text or "").strip():
+            logger.warning(
+                "scrubbed tool-name talk from reply session=%s", self.session_id
+            )
+        return cleaned or FALLBACK_REPLY
+
     async def send(self, message: str, params: dict | None = None) -> str:
         """Run one turn and return the assistant's final reply text."""
         self.history.append({"role": "user", "content": message})
@@ -87,7 +118,7 @@ class Chat:
                 break
 
             if not msg.tool_calls:
-                reply_text = msg.content or ""
+                reply_text = self._clean(msg.content or "")
                 self.history.append({"role": "assistant", "content": reply_text})
                 break
 
@@ -121,7 +152,7 @@ class Chat:
                 )
         else:
             logger.warning(
-                "hit max_tool_hops=%d without a final reply session=%s",
+                "hit MAX_TOOL_HOPS=%d without a final reply session=%s",
                 settings.MAX_TOOL_HOPS,
                 self.session_id,
             )
@@ -153,6 +184,7 @@ class Chat:
             content_parts: List[str] = []
             pending: Dict[int, dict] = {}
             streamed_any_token = False
+            scrubber = StreamScrubber()
 
             try:
                 stream = await openai_client.chat_completion_stream(
@@ -171,8 +203,10 @@ class Chat:
 
                     if delta.content:
                         content_parts.append(delta.content)
-                        streamed_any_token = True
-                        yield {"type": "token", "text": delta.content}
+                        safe = scrubber.feed(delta.content)
+                        if safe:
+                            streamed_any_token = True
+                            yield {"type": "token", "text": safe}
 
                     for tc in delta.tool_calls or []:
                         slot = pending.setdefault(
@@ -191,7 +225,10 @@ class Chat:
                 )
                 if streamed_any_token:
                     yield {"type": "error", "message": str(exc)}
-                    reply_text = "".join(content_parts)
+                    tail = scrubber.flush()
+                    if tail:
+                        yield {"type": "token", "text": tail}
+                    reply_text = scrubber.emitted
                 else:
                     reply_text = FALLBACK_REPLY
                     yield {"type": "token", "text": reply_text}
@@ -199,9 +236,19 @@ class Chat:
                 break
 
             if not pending:
-                reply_text = "".join(content_parts)
+                tail = scrubber.flush()
+                if tail:
+                    yield {"type": "token", "text": tail}
+                reply_text = scrubber.emitted.strip()
+                if not reply_text:
+                    reply_text = FALLBACK_REPLY
+                    yield {"type": "token", "text": reply_text}
                 self.history.append({"role": "assistant", "content": reply_text})
                 break
+
+            tail = scrubber.flush()
+            if tail:
+                yield {"type": "token", "text": tail}
 
             ordered = [pending[i] for i in sorted(pending)]
             self.history.append(
@@ -252,7 +299,7 @@ class Chat:
                 )
         else:
             logger.warning(
-                "hit max_tool_hops=%d without a final reply session=%s (stream)",
+                "hit MAX_TOOL_HOPS=%d without a final reply session=%s (stream)",
                 settings.MAX_TOOL_HOPS,
                 self.session_id,
             )
