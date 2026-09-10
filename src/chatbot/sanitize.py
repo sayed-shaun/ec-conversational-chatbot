@@ -74,6 +74,58 @@ _RESULT_KEYS = re.compile(
 _JSON_NOISE = re.compile(r"^\s*[\[\]{},]*\s*$")
 
 
+# The model is only ever supposed to answer in Bengali or English, but a
+# quantised model occasionally drops a stray token from an unrelated script
+# into an otherwise clean sentence -- e.g. a lone Korean word mid-answer.
+# That is never legitimate content, so any whitespace-delimited run
+# containing a character from one of these blocks is dropped outright.
+_STRAY_SCRIPT_CHAR = (
+    "ᄀ-ᇿ"  # Hangul Jamo
+    "぀-ヿ"  # Hiragana / Katakana
+    "㄰-㆏"  # Hangul Compatibility Jamo
+    "㐀-䶿"  # CJK Unified Ideographs Extension A
+    "一-鿿"  # CJK Unified Ideographs
+    "가-힣"  # Hangul Syllables
+    "豈-﫿"  # CJK Compatibility Ideographs
+    "฀-๿"  # Thai
+)
+_STRAY_SCRIPT_WORD = re.compile(rf"\s*\S*[{_STRAY_SCRIPT_CHAR}]\S*")
+
+
+def strip_foreign_script(text: str) -> str:
+    """Drop words containing a character from a script that is neither
+    Bengali nor Latin -- glitch tokens the prompt's language rule can't
+    prevent at the source."""
+    if not text:
+        return text or ""
+    cleaned = _STRAY_SCRIPT_WORD.sub(" ", text)
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
+# Another glitch the same quantised model produces: spelling "NID" half in
+# one script and half in the other -- এনID, Nআইডি, or a bare Latin NID
+# dropped into a Bengali sentence. All are normalised to the Bengali word.
+_BENGALI_CHAR = re.compile(r"[ঀ-৿]")
+_NID_VARIANTS = re.compile(
+    r"এন\s*ID"  # এনID, এন ID
+    r"|N\s*আইডি"  # Nআইডি, N আইডি
+    r"|(?<![^\W\d_])NID(?![^\W\d_])",  # a bare NID between non-letters
+    re.IGNORECASE,
+)
+
+
+def normalize_nid(text: str) -> str:
+    """Spell NID consistently as এনআইডি in a Bengali reply.
+
+    Left alone when the reply carries no Bengali at all: an English answer
+    is supposed to say "NID", and rewriting it would put a Bengali word in
+    the middle of an English sentence -- the very mixing this fixes.
+    """
+    if not text or not _BENGALI_CHAR.search(text):
+        return text or ""
+    return _NID_VARIANTS.sub("এনআইডি", text)
+
+
 def _is_protocol(line: str) -> bool:
     """Whether a line is machine protocol rather than an answer."""
     if _PROTOCOL_LABEL.match(line):
@@ -82,7 +134,7 @@ def _is_protocol(line: str) -> bool:
         return True
     stripped = line.strip()
     if stripped.startswith(("{", "}", "[", "]")) and not any(
-        "\u0980" <= c <= "\u09FF" for c in stripped
+        "\u0980" <= c <= "\u09ff" for c in stripped
     ):
         return True
     return False
@@ -109,7 +161,7 @@ def scrub(text: str) -> str:
     Returns "" if that removes everything -- the caller decides what to say
     instead, since an empty reply is never the right thing to show.
     """
-    text = strip_protocol(text)
+    text = normalize_nid(strip_foreign_script(strip_protocol(text)))
     if not text or not mentions_tool(text):
         return text or ""
 
