@@ -10,7 +10,7 @@ container-internal names -- so this file can be read by anyone without
 disclosing where the services run. Anything deployment-specific defaults to
 empty and comes from the environment; see .env.example.
 
-All three settings objects are built at import, so a field one service needs
+Both settings objects are built at import, so a field one service needs
 cannot be a required field without breaking the others. Each service instead
 calls check_required() for its own settings at startup, which names what is
 missing.
@@ -138,9 +138,9 @@ class ChatbotSettings(_Settings):
 class McpSettings(_Settings):
     """Settings for the FastMCP server (src/mcp).
 
-    TOP_SIMILAR_API_URL defaults to the self-hosted pgvector service
-    (src/vector) over the internal compose network; point it elsewhere to
-    use a different backend. GITHUB_TOKEN is required while
+    TOP_SIMILAR_API_URL is the embedding-search endpoint the tool queries;
+    it has no default because it names a deployment. GITHUB_TOKEN is
+    required while
     Synesis-IT-PLC/ec-faq-bot is private. TAG_ANSWER_REFRESH_SECONDS=0
     disables polling and only fetches once at startup. MCP_TRANSPORT is
     'http' (Streamable HTTP, for Docker/network use) or 'stdio' (local MCP
@@ -149,9 +149,9 @@ class McpSettings(_Settings):
 
     model_config = _BASE_CONFIG
 
-    TOP_SIMILAR_API_URL: str = Field(
-        default="http://ec-conversational-vector:8001/top_similar"
-    )
+    REQUIRED: ClassVar[Tuple[str, ...]] = ("TOP_SIMILAR_API_URL",)
+
+    TOP_SIMILAR_API_URL: str = Field(default="")
     TOP_SIMILAR_TIMEOUT: float = Field(default=10.0)
 
     TAG_ANSWER_URL: str = Field(
@@ -172,67 +172,5 @@ class McpSettings(_Settings):
     MCP_PATH: str = Field(default="/mcp")
 
 
-class VectorSettings(_Settings):
-    """Settings for the pgvector-backed search service (src/vector).
-
-    EMBEDDING_MODEL_NAME must stay in sync with EMBEDDING_DIM and with
-    whatever model produced the rows already stored in faq_entries -- scores
-    are meaningless across models. It isn't in fastembed's built-in
-    registry; it's registered as a custom model in src/vector/embeddings.py,
-    which also applies the E5-instruct query prefix built from
-    RETRIEVAL_TASK.
-
-    TAG_ANSWER_URL and QUESTION_TAG_CSV_URL feed the daily reindex
-    (src/vector/reindex.py), which rebuilds faq_entries from them so an
-    edit landed upstream reaches search without a manual /index upload.
-    REINDEX_ENABLED only controls the daily schedule -- manual POST
-    /reindex works regardless. REINDEX_HOUR_UTC is a fixed UTC hour rather
-    than "every 24h from whenever the container booted", so a restart at
-    any hour doesn't shift it to a busier time of day.
-    """
-
-    model_config = _BASE_CONFIG
-
-    DATABASE_URL: str = Field(
-        default="postgresql://ec_faq:ec_faq@pgvector-db:5432/ec_faq"
-    )
-    DB_POOL_MAX_SIZE: int = Field(default=5, ge=1)
-
-    EMBEDDING_MODEL_NAME: str = Field(default="intfloat/multilingual-e5-large-instruct")
-    EMBEDDING_DIM: int = Field(default=1024)
-    EMBEDDING_CACHE_DIR: str = Field(default="/root/.cache/fastembed_cache")
-    RETRIEVAL_TASK: str = Field(
-        default=(
-            "You are an expert in matching Bangladeshi National Identity Card (NID) "
-            "and voter registration queries. Your task is to identify the most "
-            "semantically relevant question from the provided document, considering "
-            "context, intent, and specific details. Use semantic similarity and "
-            "contextual understanding to retrieve the closest match, prioritizing "
-            "exact phrase matches and context-aware matching."
-        )
-    )
-
-    VECTOR_API_HOST: str = Field(default="0.0.0.0")
-    VECTOR_API_PORT: int = Field(default=8001)
-
-    TAG_ANSWER_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "development/full_dataset/tag_answer.json"
-        )
-    )
-    QUESTION_TAG_CSV_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "feat/multilingual-en-banglish-questions/full_dataset/question_tag.csv"
-        )
-    )
-    GITHUB_TOKEN: str = Field(default="")
-    REINDEX_FETCH_TIMEOUT: float = Field(default=30.0)
-    REINDEX_ENABLED: bool = Field(default=True)
-    REINDEX_HOUR_UTC: int = Field(default=3, ge=0, le=23)
-
-
 chatbot_settings = ChatbotSettings()
 mcp_settings = McpSettings()
-vector_settings = VectorSettings()

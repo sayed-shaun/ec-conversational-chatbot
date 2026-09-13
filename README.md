@@ -29,12 +29,10 @@ llama-server you already have running.
   repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
   token logs `fetched 1374 tags` on boot.
 
-Embedding search (`top_similar`) is self-hosted: `pgvector-db` (Postgres +
-pgvector) and `ec-conversational-vector` (FastAPI, local embeddings via
-[fastembed](https://github.com/qdrant/fastembed) — no third-party API, no
-outbound calls per request) both come up with `docker compose up`. The
-knowledge base starts empty — see [Indexing the knowledge
-base](#indexing-the-knowledge-base) to load it.
+- **A `top_similar` endpoint** — `TOP_SIMILAR_API_URL`, the embedding search
+  the `search_ec_services` tool queries. It must return `top_similar` entries
+  carrying `tag` and `cosine_similarity`; those two fields are all the tool
+  reads.
 
 **Run**
 
@@ -63,8 +61,7 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | **upstream smart bot** | `SMART_BOT_URL` | BanglaBERT + FAISS over the curated dataset; answers first, declines to the LLM |
 | **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_ec_services` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
-| **`ec-conversational-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
-| **`pgvector-db`** | `:5432` internal | Postgres + [pgvector](https://github.com/pgvector/pgvector), one `faq_entries` table (tag, question, answer, embedding) |
+| **your `top_similar` API** | `TOP_SIMILAR_API_URL` | Embedding search over the FAQ; returns nearest questions with `tag` and `cosine_similarity` |
 
 ```mermaid
 flowchart LR
@@ -209,58 +206,6 @@ Without `--warm` the script writes the audio here instead, one file per tag
 under `./audio` — for auditioning a voice or handing the clips to someone, not
 for serving. That path needs `ffmpeg` for the default MP3 output; `--format
 wav` skips the encode.
-
-### Indexing the knowledge base
-
-`ec-conversational-vector` starts with an empty `faq_entries` table. Load it with a JSON
-upload to `POST /index` — reachable from other containers on the compose
-network, or from the host at `http://localhost:8001/index` (published to
-`127.0.0.1` for the Swagger UI, see below):
-
-```bash
-curl -X POST http://localhost:8001/index \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "replace",
-    "entries": [
-      {"tag": "accepted_nid_types", "question": "কি ধরনের এনআইডি গ্রহণযোগ্য?", "answer": "সকল ধরনের জাতীয় পরিচয়পত্র গ্রহণযোগ্য..."}
-    ]
-  }'
-```
-
-- `mode: "replace"` truncates `faq_entries` first, so the upload becomes the
-  entire knowledge base — use this for a full reload.
-- `mode: "append"` (default) upserts by `(tag, question)`, for incremental
-  additions.
-- Each entry is embedded locally (fastembed) and stored with its vector; no
-  outbound calls are made per request.
-- No auth on `/index`/`/reindex` — this service isn't internet-facing (its
-  host port is bound to `127.0.0.1` only), so there's no third party to
-  gate out.
-
-`GET /health` on `ec-conversational-vector` reports `row_count` and the active
-`embedding_model_name`.
-
-### Keeping the index in sync
-
-`ec-conversational-vector` also reindexes itself directly from GitHub, so an edit to
-the upstream dataset reaches search without a manual `/index` upload:
-
-- Fetches `TAG_ANSWER_URL` (tag → answer) and `QUESTION_TAG_CSV_URL`
-  (question, tag paraphrase pairs) — the same two files documented in
-  [Synesis-IT-PLC/ec-faq-bot](https://github.com/Synesis-IT-PLC/ec-faq-bot)'s
-  `full_dataset/` — joins them into `{tag, question, answer}` entries, and
-  replaces the whole `faq_entries` table (`src/vector/reindex.py`).
-- Runs once a day at `VECTOR_REINDEX_HOUR_UTC` (default `3`, i.e. 03:00 UTC)
-  via [APScheduler](https://apscheduler.readthedocs.io/); set
-  `VECTOR_REINDEX_ENABLED=false` to turn off the schedule entirely.
-- `POST /reindex` triggers the same job on demand; a reindex already in
-  progress makes a second call a no-op (`{"status": "already_running"}`)
-  rather than running two in parallel.
-- A full reindex re-embeds every row from scratch, so it costs roughly what
-  the initial load did — with the default model that's tens of minutes for
-  the current dataset size, not seconds. `GET /health`'s `row_count` only
-  changes once the run completes (it replaces the table in one transaction).
 
 ### Retrieval parameters
 

@@ -3,9 +3,8 @@ Entrypoint for both services in this repo.
 
     python main.py api      # FastAPI chatbot backend (default)
     python main.py mcp      # FastMCP search_ec_services server
-    python main.py vector   # pgvector-backed FAQ search API
 
-Two containers run from the same image-building context, so keeping both
+Both containers run from the same image-building context, so keeping both
 entrypoints here means there is one obvious place to look for "how does this
 start", rather than a CMD buried in each Dockerfile.
 
@@ -49,25 +48,7 @@ def run_mcp() -> None:
     mcp_main()
 
 
-def run_vector() -> None:
-    """Serve the pgvector-backed FAQ search API."""
-    import uvicorn
-
-    from src.core.config import vector_settings as settings
-
-    logger.info(
-        "starting vector search API on http://%s:%s",
-        settings.VECTOR_API_HOST,
-        settings.VECTOR_API_PORT,
-    )
-    uvicorn.run(
-        "src.vector.app:app",
-        host=settings.VECTOR_API_HOST,
-        port=settings.VECTOR_API_PORT,
-    )
-
-
-SERVICES = {"api": run_api, "mcp": run_mcp, "vector": run_vector}
+SERVICES = {"api": run_api, "mcp": run_mcp}
 
 
 def main(argv: list[str] | None = None) -> int:
