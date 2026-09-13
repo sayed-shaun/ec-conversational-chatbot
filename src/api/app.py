@@ -183,8 +183,9 @@ def create_app() -> FastAPI:
     )
     if smart_client.enabled:
         logger.info(
-            "hybrid on: %s answers first, LLM takes declined turns",
+            "hybrid on: %s answers first, LLM takes %s",
             smart_client.endpoint,
+            ", ".join(sorted(smart_client.llm_tags)),
         )
     else:
         logger.info("hybrid off (SMART_BOT_URL unset); every turn goes to the LLM")

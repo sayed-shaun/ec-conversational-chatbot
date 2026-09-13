@@ -86,8 +86,17 @@ for word, which is what you want for NID guidance — fees, ages and deadlines
 reach the citizen exactly as the dataset has them, with no model in the path to
 paraphrase them.
 
-The local LLM runs **only** when that API declines, which it signals with
-`response_tag: "unable_to_answer"`. A failed or unreachable call counts as a
+`LIST_OF_TAGS_WILL_GO_TO_LLM` decides which answers the LLM writes instead:
+
+```
+LIST_OF_TAGS_WILL_GO_TO_LLM=["greetings", "salam_dao", "unable_to_answer"]
+```
+
+`unable_to_answer` is the API saying it has none. The greeting tags are there
+because the dataset answers a greeting with one fixed line, which reads as
+canned to someone who just said hello, and nothing about small talk needs the
+verbatim guarantee the dataset exists to provide. The list is exhaustive — take
+a tag out and it is served from the dataset again. A failed or unreachable call counts as a
 decline too, so the bot keeps answering while the smart service is down instead
 of returning an error. Leave `SMART_BOT_URL` empty and there is no hybrid at
 all: every turn goes to the LLM, exactly as before.
@@ -241,6 +250,7 @@ if a required one is missing.
 | `SMART_BOT_URL` | *(unset)* | Upstream smart bot; set it to enable the hybrid path, empty = LLM only |
 | `SMART_BOT_TIMEOUT` | `60` | Seconds to wait for one smart-bot turn |
 | `SMART_BOT_USE_LLM_SELECTOR` | `true` | Let the smart bot's selector arbitrate — and decline, which is what hands a turn to the LLM |
+| `LIST_OF_TAGS_WILL_GO_TO_LLM` | `["greetings", "salam_dao", "unable_to_answer"]` | The answers the LLM writes instead of the smart bot |
 | `TOP_SIMILAR_API_URL` | **required** | Embedding search API |
 | `TAG_ANSWER_URL` | **required** | Knowledge-base dataset |
 | `LLAMA_UPSTREAM`, `EC_LLM_UPSTREAM` | **required with `caddy`** | Upstreams Caddy publishes |

@@ -3,8 +3,10 @@ Client for the upstream EC smart bot (BanglaBERT + FAISS + keyword booster).
 
 This is the first half of the hybrid: the smart API owns the knowledge base
 and answers the great majority of turns from it directly, word for word, with
-no generation involved. Only when it explicitly declines does the local LLM
-get the turn -- see `SmartReply.declined` and src/chatbot/chat.py.
+no generation involved. The local LLM gets the turn when it declines, and when
+it answers with a tag this deployment would rather the LLM handled -- small
+talk, mainly, where a fixed dataset line reads as canned and nothing needs the
+verbatim guarantee. See `SmartReply.declined` and src/chatbot/chat.py.
 
 The API is stateful per conversation in a pass-the-transcript way: it takes a
 `messages` JSON string and a `chat_id`, and returns the transcript with this
@@ -16,7 +18,7 @@ silently lose it. So it is checkpointed verbatim alongside the LLM history.
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, FrozenSet, Iterable, Optional
 
 import httpx
 
@@ -31,11 +33,12 @@ class SmartReply:
     """One turn's answer from the smart API.
 
     `declined` is the routing decision this whole module exists to produce.
-    It is true when the API said in so many words that it has no answer
-    (`response_tag == DECLINE_TAG`), and also when the call failed -- an
-    unreachable knowledge base is still a turn with no answer in it, and
-    falling through to the LLM keeps the bot talking while it is down.
-    `error` distinguishes the two for the logs and the trace.
+    It is true when the tag is one this deployment routes to the LLM
+    (`llm_tags`, which is where "unable_to_answer" lives -- the API saying
+    it has no answer), and when the call failed outright: an unreachable
+    knowledge base is still a turn with no answer in it, and falling
+    through keeps the bot talking while it is down. `error` distinguishes
+    the last case for the logs and the trace.
     """
 
     text: str = ""
@@ -45,12 +48,16 @@ class SmartReply:
     messages: str = ""
     is_relevant: bool = True
     error: str = ""
+    #: Tags this deployment hands to the LLM. Carried on the reply rather
+    #: than read from the client, so a reply can be reasoned about -- and
+    #: tested -- without one.
+    llm_tags: FrozenSet[str] = frozenset()
 
     @property
     def declined(self) -> bool:
         if self.error or not self.text.strip():
             return True
-        return self.tag == SmartBotClient.DECLINE_TAG
+        return self.tag in self.llm_tags
 
 
 class SmartBotClient:
@@ -61,15 +68,20 @@ class SmartBotClient:
     not to handle HTTP.
     """
 
-    #: The API's own name for "I have no answer for this". Confirmed against
-    #: the live service: an off-topic question returns this tag with
-    #: prediction_source 'llm_selector_declined'.
-    DECLINE_TAG = "unable_to_answer"
-
-    def __init__(self, base_url: str, timeout: float, use_llm_selector: bool) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float,
+        use_llm_selector: bool,
+        llm_tags: Iterable[str] = (),
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.use_llm_selector = use_llm_selector
+        #: The complete set of tags the LLM answers instead of this API --
+        #: nothing is added implicitly, so the configured list is the whole
+        #: story and "unable_to_answer" is in it only because it is listed.
+        self.llm_tags = frozenset(tag.strip() for tag in llm_tags if tag.strip())
 
     @property
     def enabled(self) -> bool:
@@ -105,22 +117,25 @@ class SmartBotClient:
             logger.warning(
                 "smart API returned %s chat_id=%s", exc.response.status_code, chat_id
             )
-            return SmartReply(error=f"smart API HTTP {exc.response.status_code}")
+            return self._failed(f"smart API HTTP {exc.response.status_code}")
         except httpx.HTTPError as exc:
             logger.warning("smart API unreachable chat_id=%s: %s", chat_id, exc)
-            return SmartReply(error=f"smart API unreachable: {exc}")
+            return self._failed(f"smart API unreachable: {exc}")
         except json.JSONDecodeError as exc:
             logger.warning("smart API sent non-JSON chat_id=%s: %s", chat_id, exc)
-            return SmartReply(error="smart API sent a malformed response")
+            return self._failed("smart API sent a malformed response")
 
         if not isinstance(data, dict):
             logger.warning("smart API sent %s, expected an object", type(data).__name__)
-            return SmartReply(error="smart API sent an unexpected shape")
+            return self._failed("smart API sent an unexpected shape")
 
         return self._parse(data)
 
-    @staticmethod
-    def _parse(data: dict) -> SmartReply:
+    def _failed(self, message: str) -> SmartReply:
+        """A call that did not produce an answer. Reads as a decline."""
+        return SmartReply(error=message, llm_tags=self.llm_tags)
+
+    def _parse(self, data: dict) -> SmartReply:
         """Shape one response body into a SmartReply.
 
         Every field is read defensively. The API's documented fields are
@@ -135,6 +150,7 @@ class SmartBotClient:
             source=str(data.get("prediction_source") or ""),
             messages=str(data.get("messages") or ""),
             is_relevant=bool(data.get("is_relevant", True)),
+            llm_tags=self.llm_tags,
         )
 
 
@@ -149,4 +165,5 @@ smart_client = SmartBotClient(
     settings.SMART_BOT_URL,
     settings.SMART_BOT_TIMEOUT,
     settings.SMART_BOT_USE_LLM_SELECTOR,
+    settings.LIST_OF_TAGS_WILL_GO_TO_LLM,
 )

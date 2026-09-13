@@ -22,7 +22,7 @@ lower-case an env var name to find its field, or vice versa.
 """
 
 import os
-from typing import ClassVar, Tuple
+from typing import ClassVar, List, Tuple
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -103,6 +103,15 @@ class ChatbotSettings(_Settings):
     SMART_BOT_USE_LLM_SELECTOR forwards the API's own use_llm_selector
     query flag, which lets its selector arbitrate candidate disagreements
     rather than always serving the fused ranker's top hit.
+
+    LIST_OF_TAGS_WILL_GO_TO_LLM is the whole set of answers the LLM
+    writes instead of the smart bot, as a JSON list. "unable_to_answer"
+    is in it because that is the API saying it has none; the greeting
+    tags are in it because the dataset answers a greeting with one fixed
+    line, which reads as canned to someone who just said hello, and
+    nothing about small talk needs the verbatim guarantee the dataset
+    exists to provide. The list is exhaustive -- a tag removed from it is
+    served from the dataset again, including "unable_to_answer".
     """
 
     model_config = _BASE_CONFIG
@@ -116,6 +125,9 @@ class ChatbotSettings(_Settings):
     SMART_BOT_URL: str = Field(default="")
     SMART_BOT_TIMEOUT: float = Field(default=60.0)
     SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=True)
+    LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
+        default=["greetings", "salam_dao", "unable_to_answer"]
+    )
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")
