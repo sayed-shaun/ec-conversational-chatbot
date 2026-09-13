@@ -90,10 +90,19 @@ class ChatbotSettings(_Settings):
 
     TRACE_DIR is empty by default, which disables tracing. Enabling it
     records each turn's question, reply and -- for a voice turn -- both
-    sides of the audio, with the question text in the filename.
-    TRACE_TTL_DAYS of 0 keeps those recordings indefinitely, so that
-    enabling TRACE_DIR never deletes existing records; set a positive
-    value to have them expire.
+    sides of the audio, with the question text in the filename. That is a
+    citizen's own words and voice on disk, so TRACE_TTL_DAYS defaults to
+    7 and the recordings expire on their own; 0 keeps them forever, which
+    is a deliberate choice to make rather than something to inherit from
+    a default.
+
+    SMART_BOT_URL is the base of the upstream EC smart bot and turns the
+    hybrid path on: every turn is put to that API first, and only a turn
+    it declines reaches the local LLM. Left empty (the default) there is
+    no hybrid and every turn goes to the LLM, exactly as before.
+    SMART_BOT_USE_LLM_SELECTOR forwards the API's own use_llm_selector
+    query flag, which lets its selector arbitrate candidate disagreements
+    rather than always serving the fused ranker's top hit.
     """
 
     model_config = _BASE_CONFIG
@@ -104,12 +113,15 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
+    SMART_BOT_URL: str = Field(default="")
+    SMART_BOT_TIMEOUT: float = Field(default=60.0)
+    SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=True)
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")
     ASR_DUMP_DIR: str = Field(default="")
     TRACE_DIR: str = Field(default="")
-    TRACE_TTL_DAYS: int = Field(default=0, ge=0)
+    TRACE_TTL_DAYS: int = Field(default=7, ge=0)
     TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
     TTS_MAX_CHARS: int = Field(default=3000, ge=1)
     CORS_ALLOW_ORIGINS: str = Field(default="*")

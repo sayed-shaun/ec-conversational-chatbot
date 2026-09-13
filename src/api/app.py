@@ -23,9 +23,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.v1 import router as v1_router
 from src.api import trace
+from src.api.v1 import router as v1_router
 from src.chatbot.checkpointer import checkpointer
+from src.chatbot.smart import smart_client
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
@@ -180,6 +181,13 @@ def create_app() -> FastAPI:
         settings.MCP_SERVER_URL,
         settings.STATIC_DIR,
     )
+    if smart_client.enabled:
+        logger.info(
+            "hybrid on: %s answers first, LLM takes declined turns",
+            smart_client.endpoint,
+        )
+    else:
+        logger.info("hybrid off (SMART_BOT_URL unset); every turn goes to the LLM")
     return application
 
 

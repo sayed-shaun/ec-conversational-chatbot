@@ -29,7 +29,12 @@ from src.speech.transform.addresses import (
     addresses_for_speech,
     dedupe_site_noun,
 )
-from src.speech.transform.common import collapse_space, has_bengali
+from src.speech.transform.common import (
+    collapse_space,
+    has_bengali,
+    join_nukta,
+    split_nukta,
+)
 from src.speech.transform.latin import (
     LATIN_LETTER_BN,
     SPOKEN_LATIN,
@@ -65,6 +70,8 @@ __all__ = [
     "strip_markdown",
     "collapse_space",
     "has_bengali",
+    "split_nukta",
+    "join_nukta",
     "normalize_digits",
     "number_to_bangla_words",
     "bangla_hundreds",
@@ -97,14 +104,19 @@ def for_speech(text: str) -> str:
     emits Bangla number words, so testing for Bengali afterwards reports yes
     for an English reply containing a fee, and the Latin stages would then
     delete the English answer.
+
+    Around all of it, ড়/ঢ়/য় are folded to one spelling on the way in and the
+    other on the way out -- see split_nukta in common.py for why Unicode will
+    not do it and what it cost when nothing did.
     """
     is_bengali = has_bengali(text)
 
-    out = strip_markdown(text)
+    out = split_nukta(text)
+    out = strip_markdown(out)
     out = addresses_for_speech(out)
     out = numbers_for_speech(out, bengali=is_bengali)
     if is_bengali:
         out = spoken_latin(out)
         out = latin_for_speech(out)
         out = dedupe_site_noun(out)
-    return punctuation_for_speech(out)
+    return join_nukta(punctuation_for_speech(out))

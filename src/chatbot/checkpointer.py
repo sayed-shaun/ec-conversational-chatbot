@@ -5,6 +5,12 @@ Each session's full message list is stored as one JSON blob, which matches how
 a turn actually uses it: read the whole history, append to it, write it back
 trimmed. That avoids reassembling a row-per-message table on every request.
 
+A hybrid session has a second transcript beside it: the opaque `messages`
+string the upstream smart API hands back each turn and expects to receive on
+the next one (see src/chatbot/smart.py). It is stored in its own column rather
+than smuggled into the history list, because anything in that list is sent to
+llama-server as a chat message and this is not one.
+
 sqlite3 is blocking, so every call runs in a worker thread. Blocking the event
 loop would stall the token streaming this service exists to serve.
 
@@ -37,6 +43,11 @@ class SqliteCheckpointer:
     )
     """
 
+    #: Added after the table shipped, so an existing database file has to be
+    #: migrated in place rather than recreated -- dropping it would end every
+    #: conversation in flight at deploy time.
+    SMART_COLUMN = "smart_messages"
+
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
 
@@ -57,16 +68,40 @@ class SqliteCheckpointer:
         os.makedirs(parent, exist_ok=True)
         with self._connect() as connection:
             connection.execute(self.SCHEMA)
+            self._add_smart_column(connection)
         logger.info("checkpointer ready sqlite=%s", self.db_path)
 
-    def _load(self, session_id: str) -> list[dict] | None:
+    def _add_smart_column(self, connection: sqlite3.Connection) -> None:
+        """Add the smart-transcript column to a pre-hybrid database.
+
+        Checked by inspecting the table rather than catching the error from a
+        blind ALTER, so a genuine failure is not mistaken for "already there".
+        Rows written before the migration read back as NULL, which load()
+        turns into "", i.e. a conversation the smart API has not seen yet --
+        the correct starting state for it.
+        """
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(checkpoints)")
+        }
+        if self.SMART_COLUMN in columns:
+            return
+        connection.execute(
+            f"ALTER TABLE checkpoints ADD COLUMN {self.SMART_COLUMN} TEXT"
+        )
+        logger.info("migrated checkpoints: added %s column", self.SMART_COLUMN)
+
+    def _load(self, session_id: str) -> tuple[list[dict] | None, str]:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT history FROM checkpoints WHERE session_id = ?", (session_id,)
+                f"SELECT history, {self.SMART_COLUMN} FROM checkpoints "
+                "WHERE session_id = ?",
+                (session_id,),
             ).fetchone()
 
         if row is None:
-            return None
+            return None, ""
+
+        smart = row[1] or ""
 
         try:
             history = json.loads(row[0])
@@ -74,25 +109,27 @@ class SqliteCheckpointer:
             logger.warning(
                 "corrupt checkpoint for session=%s; starting fresh", session_id
             )
-            return None
+            return None, smart
 
         if not isinstance(history, list) or not history:
-            return None
-        return history
+            return None, smart
+        return history, smart
 
-    def _save(self, session_id: str, history: list[dict]) -> None:
+    def _save(self, session_id: str, history: list[dict], smart: str) -> None:
         payload = json.dumps(history, ensure_ascii=False)
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT INTO checkpoints (session_id, history, updated_at)
-                VALUES (?, ?, ?)
+                f"""
+                INSERT INTO checkpoints
+                    (session_id, history, updated_at, {self.SMART_COLUMN})
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     history = excluded.history,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    {self.SMART_COLUMN} = excluded.{self.SMART_COLUMN}
                 """,
-                (session_id, payload, now),
+                (session_id, payload, now, smart),
             )
 
     def _delete(self, session_id: str) -> None:
@@ -121,13 +158,19 @@ class SqliteCheckpointer:
         with self._connect() as connection:
             return connection.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
-    async def load(self, session_id: str) -> list[dict] | None:
-        """Return a stored transcript, or None if this session is new."""
+    async def load(self, session_id: str) -> tuple[list[dict] | None, str]:
+        """Return (transcript, smart transcript) for a session.
+
+        The transcript is None if this session is new; the smart transcript is
+        "" if it is new, pre-hybrid, or has only ever been answered locally.
+        """
         return await asyncio.to_thread(self._load, session_id)
 
-    async def save(self, session_id: str, history: list[dict]) -> None:
-        """Persist a transcript, replacing any earlier checkpoint."""
-        await asyncio.to_thread(self._save, session_id, history)
+    async def save(
+        self, session_id: str, history: list[dict], smart: str = ""
+    ) -> None:
+        """Persist both transcripts, replacing any earlier checkpoint."""
+        await asyncio.to_thread(self._save, session_id, history, smart)
 
     async def delete(self, session_id: str) -> None:
         """Drop a session's checkpoint."""

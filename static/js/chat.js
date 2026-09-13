@@ -9,7 +9,23 @@ import { el, formatSeconds } from './dom.js';
 import { addRow, addUserMessage, stickToBottom } from './transcript.js';
 import { renderAnswer } from './answer.js';
 
-let sessionId = localStorage.getItem('ec_conversational_session_id') || null;
+/*
+ * The session id lives in this tab and nowhere else.
+ *
+ * It used to be kept in localStorage, which meant closing the chat and
+ * reopening it resumed the same conversation -- the transcript outlived the
+ * visit. A citizen asking about their own NID at a shared or public machine
+ * should not find the previous person's questions waiting, so the id is now
+ * held in memory, the transcript is deleted server-side when the page goes
+ * away (see endSession below), and any id left behind by the old build is
+ * cleared out on load.
+ */
+let sessionId = null;
+try {
+  localStorage.removeItem('ec_conversational_session_id');
+} catch (e) {
+  // Private mode or blocked storage: nothing to clear, nothing to do.
+}
 
 // Read-only view for voice mode, which tags its ASR and TTS calls with the
 // session they belong to (see src/chatbot/trace.py).
@@ -62,13 +78,15 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
   let answerRaw = '';
   let failed = false;
   let finalReply = '';
+  // The knowledge-base entry this answer came from, '' when the LLM wrote
+  // it. Carried to the TTS call, which is where it decides caching.
+  let finalTag = '';
 
   const handle = (ev) => {
 
     switch (ev.type) {
       case 'start':
         sessionId = ev.session_id;
-        localStorage.setItem('ec_conversational_session_id', sessionId);
         break;
 
       case 'reasoning':
@@ -168,6 +186,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
           renderAnswer(answerEl, answerRaw);
         }
         finalReply = ev.reply || answerRaw;
+        finalTag = ev.tag || '';
 
         const total = performance.now() - startedAt;
         const timing = el('div', 'timing', bubble);
@@ -256,7 +275,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
     stickToBottom();
   }
 
-  return { text: finalReply, failed };
+  return { text: finalReply, failed, tag: finalTag };
 }
 
 async function submit() {
@@ -295,25 +314,56 @@ inputEl.addEventListener('input', () => {
   inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
 });
 
-resetBtn.addEventListener('click', async () => {
-  if (sessionId) {
-    try {
-      await fetch(API_BASE + '/api/v1/reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-    } catch (e) {
+/*
+ * Ask the server to delete this session's transcript.
+ *
+ * `keepalive` is what makes this work from the unload handler below: a normal
+ * fetch is cancelled when the page goes away, which is exactly the moment the
+ * request matters most. sendBeacon would also survive, but it cannot send
+ * `Content-Type: application/json` cross-origin without tripping a preflight
+ * it is not allowed to make -- and the UI is meant to be hostable on another
+ * origin (see CORS_ALLOW_ORIGINS), so that would fail silently on Vercel.
+ */
+function endSession() {
+  if (!sessionId) return;
+  try {
+    fetch(API_BASE + '/api/v1/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify({ session_id: sessionId }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (e) {
 
-    }
   }
+}
+
+resetBtn.addEventListener('click', () => {
+  endSession();
+  // A new id is minted by the next turn's `start` event; dropping it here is
+  // what makes the reset a new conversation rather than a cleared screen.
+  sessionId = null;
   messagesEl.innerHTML = '';
   greet();
   inputEl.focus();
 });
+
+/*
+ * Closing the chat deletes it.
+ *
+ * `pagehide` rather than `beforeunload`: it is the one that fires reliably on
+ * mobile Safari and Chrome, where a tab is frozen and discarded rather than
+ * unloaded, and `beforeunload` often never runs at all.
+ *
+ * This is best-effort by nature -- a crash, a killed tab or a dropped
+ * connection sends nothing. SESSION_TTL_MINUTES on the server is the backstop
+ * that catches those, so a transcript is deleted promptly when the browser
+ * manages to say goodbye, and on the idle timer when it does not.
+ */
+window.addEventListener('pagehide', endSession);
 
 export function greet() {
   addRow('bot').textContent =

@@ -11,3 +11,4 @@ dist/
 .env*
 src/mcp/tag_answer.json
 data/
+audio/

@@ -6,6 +6,11 @@ memory: an MCP tool retrieves the closest matching question and the model
 replies grounded in that answer — or admits it doesn't know and points the user
 to `105`.
 
+It is **hybrid**: every turn goes first to the upstream EC smart bot
+(BanglaBERT + FAISS over the curated dataset), which answers it verbatim. Only
+a question that API declines reaches the local LLM. See
+[The hybrid path](#the-hybrid-path).
+
 llama.cpp + FastMCP + FastAPI. Two containers, one `docker compose up`, plus a
 llama-server you already have running.
 
@@ -54,7 +59,8 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | Component | Port | Role |
 |---|---|---|
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/llamacpp/*` and `/ec-llm-service/*` to their upstreams, everything else to the chatbot |
-| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
+| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, hybrid routing, the tool-calling loop, static chat UI |
+| **upstream smart bot** | `SMART_BOT_URL` | BanglaBERT + FAISS over the curated dataset; answers first, declines to the LLM |
 | **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_ec_services` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
 | **`ec-conversational-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
@@ -63,14 +69,52 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 ```mermaid
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
-    CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
-    BOT <-->|"/v1/chat/completions<br/>+ search_ec_services schema"| LLM["llama-server"]
+    CADDY --> BOT["ec-conversational-chatbot<br/>hybrid router"]
+    BOT -->|"1. every turn"| SMART["upstream smart bot<br/>BanglaBERT + FAISS"]
+    SMART -.->|"answer"| BOT
+    SMART -.->|"unable_to_answer"| BOT
+    BOT <-->|"2. only declined turns<br/>/v1/chat/completions"| LLM["llama-server"]
     BOT -->|"model asked for search_ec_services"| MCP["ec-conversational-mcp"]
     MCP --> SIM["top_similar API"]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
 ```
+
+### The hybrid path
+
+Set `SMART_BOT_URL` and every turn is put to `POST {SMART_BOT_URL}/ec_bot/smart/`
+before anything else happens. That API answers out of the curated dataset word
+for word, which is what you want for NID guidance — fees, ages and deadlines
+reach the citizen exactly as the dataset has them, with no model in the path to
+paraphrase them.
+
+The local LLM runs **only** when that API declines, which it signals with
+`response_tag: "unable_to_answer"`. A failed or unreachable call counts as a
+decline too, so the bot keeps answering while the smart service is down instead
+of returning an error. Leave `SMART_BOT_URL` empty and there is no hybrid at
+all: every turn goes to the LLM, exactly as before.
+
+**Both transcripts are kept.** The smart API is stateful in a
+pass-the-transcript way — it returns a `messages` string it expects back on the
+next turn, carrying the per-turn tag its follow-up handling reads — so that
+string is checkpointed verbatim in its own `smart_messages` column. A
+smart-answered turn is *also* mirrored into the LLM transcript as a plain
+user/assistant exchange, so when a later question does fall through, the model
+inherits everything the citizen has already been told rather than starting
+mid-thread.
+
+In the UI a smart lookup renders as an ordinary tool chip: matched tag and
+score on a hit, a low-confidence warning on a decline followed by the LLM
+stream. `POST /api/v1/chat` reports which engine answered in `source`
+(`"smart"` or `"llm"`), and the `done` SSE frame carries the same field.
+
+Both also carry `tag` — the knowledge-base entry the answer came from, empty
+when the LLM wrote it. The browser hands it back on the matching `/api/v1/tts`
+call and the route forwards it to the TTS service, which **caches a tagged
+reply and declines to cache an untagged one**. That split is the point: a
+canned answer is read verbatim to every citizen who asks it, while an LLM
+answer is new wording every time and would only evict the ones that repeat.
 
 **The chatbot orchestrates, not the model.** llama-server never talks to the
 MCP server: it only *asks* for `search_ec_services` in a `tool_calls` response, and
@@ -101,7 +145,7 @@ session history so follow-ups keep context.
 | `tool_call` | `name` + `arguments` |
 | `tool_result` | `confident`, `best_tag`, `best_score`, `threshold`, `candidates[]` |
 | `token` | A chunk of the answer |
-| `done` | The assembled `reply` |
+| `done` | The assembled `reply`, plus `source` (`smart` or `llm`) and `tag` |
 | `error` | Something failed mid-turn |
 
 `reasoning` is separate because llama-server emits it as a non-standard
@@ -121,6 +165,50 @@ long-lived response). Use `scripts/load_test.py`:
 python scripts/load_test.py --url http://YOUR_HOST:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
+
+### Pre-rendering the answers
+
+The dataset is fixed — one canned answer per tag — so the bot says the same few
+hundred sentences over and over, and synthesising them live costs **5 to 34
+seconds** each. The TTS service caches its own output (it answers `x-cache:
+HIT`), so the job here is to fill that cache once:
+
+```bash
+python scripts/generate_audio.py --warm            # ask it to say every answer once
+python scripts/generate_audio.py --warm --limit 10 # a sample first
+```
+
+Measured against the warmed service:
+
+| | cold | cached |
+|---|---|---|
+| `/tts` buffered | 33,650 ms | 263 ms |
+| PCM stream, first byte | 4,683 ms | 16 ms |
+| voice mode, first sound | — | 39 ms (in Chrome) |
+
+**One call per distinct text is enough.** The service keys on the text and the
+voice, not the output format — warming `wav` makes the PCM stream a hit too, so
+both the buffered path a typed turn uses and the stream voice mode uses are
+covered by a single request. The dataset's 1379 tags share only **892 distinct
+answers**, and `--warm` sends only those. Re-running is all cache hits, so an
+interrupted pass just resumes and a dataset edit costs only what changed.
+
+What gets sent is not the dataset entry. Two things happen to an answer first,
+and both live here rather than in the TTS service:
+
+- the smart bot appends a constant closing line to every answer it serves;
+- `transform.for_speech` rewrites it for a voice — `২৩০` becomes `দুইশ ত্রিশ`,
+  `NID` becomes `এনআইডি`, markdown goes.
+
+`POST /api/v1/tts` sends the service exactly that string, so the warm pass has
+to send the same one, character for character. `--manifest-only` writes those
+strings out (`spoken`, per tag) without synthesising anything, so the match can
+be checked rather than assumed.
+
+Without `--warm` the script writes the audio here instead, one file per tag
+under `./audio` — for auditioning a voice or handing the clips to someone, not
+for serving. That path needs `ffmpeg` for the default MP3 output; `--format
+wav` skips the encode.
 
 ### Indexing the knowledge base
 
@@ -205,13 +293,17 @@ if a required one is missing.
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLAMA_BASE_URL` | **required** | Your llama-server |
+| `SMART_BOT_URL` | *(unset)* | Upstream smart bot; set it to enable the hybrid path, empty = LLM only |
+| `SMART_BOT_TIMEOUT` | `60` | Seconds to wait for one smart-bot turn |
+| `SMART_BOT_USE_LLM_SELECTOR` | `true` | Let the smart bot's selector arbitrate — and decline, which is what hands a turn to the LLM |
 | `TOP_SIMILAR_API_URL` | **required** | Embedding search API |
 | `TAG_ANSWER_URL` | **required** | Knowledge-base dataset |
 | `LLAMA_UPSTREAM`, `EC_LLM_UPSTREAM` | **required with `caddy`** | Upstreams Caddy publishes |
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
-| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
+| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables. Backstop for a chat that never said goodbye |
+| `TRACE_TTL_DAYS` | `7` | Days a trace recording is kept; `0` keeps forever |
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `9100` | The only port published on the host |
@@ -226,7 +318,7 @@ if a required one is missing.
 ├── main.py                 # `python main.py api` | `python main.py mcp`
 ├── Caddyfile               # /llamacpp/*, /ec-llm-service/* → upstreams, rest → chatbot
 ├── vercel.json             # build step for hosting the static UI
-├── scripts/                # load_test.py, point-alias.sh
+├── scripts/                # load_test.py, generate_audio.py, point-alias.sh
 ├── static/                 # the chat UI, served as-is (no build step)
 │   ├── index.html          # markup only: links css/, loads js/main.js
 │   ├── css/                # base, chat, composer, responsive, answer, voice
@@ -238,8 +330,9 @@ if a required one is missing.
     │   ├── trace.py        # per-turn record on disk (off unless TRACE_DIR)
     │   └── v1/             # routes.py (/chat, /chat/stream, /reset), schemas.py
     ├── chatbot/            # the conversation, no web framework
-    │   ├── chat.py         # one conversation, the tool-calling loop
-    │   ├── checkpointer.py # SqliteCheckpointer: transcripts + idle expiry
+    │   ├── chat.py         # one conversation: smart-first routing, tool loop
+    │   ├── smart.py        # upstream smart bot; decides what falls to the LLM
+    │   ├── checkpointer.py # SqliteCheckpointer: both transcripts + idle expiry
     │   ├── client.py       # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py       # system prompt and canned replies (Bengali)
     │   ├── sanitize.py     # keeps the tool name out of every reply
@@ -356,9 +449,14 @@ identical runs) — the server flag is the dependable lever.
   durability, not scale — replicas sharing one file over a volume is fragile,
   and across hosts it doesn't work. That needs Redis or Postgres behind the same
   interface.
-- **Sessions expire on idle**, since HTTP gives no end-of-chat signal. This also
-  bounds retention, which matters because transcripts contain citizens'
-  questions.
+- **Closing the chat deletes it, best-effort.** The UI holds the session id in
+  the tab (not `localStorage`) and posts `/reset` on `pagehide` with a
+  `keepalive` fetch, so shutting the tab removes the transcript server-side and
+  reopening starts a fresh conversation. A crash or a killed tab sends nothing,
+  which is what `SESSION_TTL_MINUTES` is the backstop for — HTTP gives no
+  reliable end-of-chat signal, so idleness still has to cover the gap. Both
+  paths delete the smart transcript along with the LLM one; the smart API keeps
+  no server-side copy of its own.
 - **No auth on any service.** Beyond localhost/LAN, put an authenticating
   reverse proxy in front of `8000`, `8080` and `9000`.
 
