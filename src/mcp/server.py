@@ -7,7 +7,8 @@ Exposes a single MCP tool, `search_ec_services`, that:
      (self-hosted by the ec-conversational-vector/pgvector service by
      default -- see TOP_SIMILAR_API_URL) and gets back the top_k nearest
      questions with their `tag` and `cosine_similarity`.
-  2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag).
+  2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag)
+     and drops placeholder tags that carry no real answer (PLACEHOLDER_TAGS).
   3. Looks up the canonical Bengali answer for each unique tag in
      `tag_answer.json`.
   4. Returns a compact, ready-to-use payload: the single best answer plus a
@@ -39,6 +40,15 @@ logger = get_logger(__name__)
 NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
+
+# Tags whose entry in tag_answer.json is a marker rather than an answer.
+# `fraction` labels a sentence fragment -- a follow-up that only means anything
+# against the previous turn ("how many days?") -- and its "answer" is the
+# literal string "tag". The upstream smart bot rewrites such a question against
+# the conversation before it answers; this tool is given one question and no
+# conversation, so a fraction match can only produce a confidently wrong reply.
+# Drop it and let the next candidate, or "I don't know", stand instead.
+PLACEHOLDER_TAGS = frozenset({"fraction"})
 
 mcp = FastMCP(name="ec-conversational-search")
 
@@ -108,9 +118,23 @@ def search_ec_services(
     unique_matches = []
     for match in matches:
         tag = match.get("tag")
-        if tag and tag not in seen_tags:
-            seen_tags.add(tag)
-            unique_matches.append(match)
+        if not tag or tag in seen_tags:
+            continue
+        seen_tags.add(tag)
+        if tag in PLACEHOLDER_TAGS:
+            logger.info("dropping placeholder tag=%s question=%r", tag, question)
+            continue
+        unique_matches.append(match)
+
+    if not unique_matches:
+        return {
+            "input_question": data.get("input_question", question),
+            "confident": False,
+            "best_tag": "",
+            "best_answer": NOT_FOUND_ANSWER,
+            "best_score": 0.0,
+            "alternatives": [],
+        }
 
     enriched = [
         {
