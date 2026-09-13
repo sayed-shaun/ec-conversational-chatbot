@@ -94,6 +94,14 @@ class ChatbotSettings(_Settings):
     TRACE_TTL_DAYS of 0 keeps those recordings indefinitely, so that
     enabling TRACE_DIR never deletes existing records; set a positive
     value to have them expire.
+
+    SMART_BOT_URL is the base of the upstream EC smart bot and turns the
+    hybrid path on: every turn is put to that API first, and only a turn
+    it declines reaches the local LLM. Left empty (the default) there is
+    no hybrid and every turn goes to the LLM, exactly as before.
+    SMART_BOT_USE_LLM_SELECTOR forwards the API's own use_llm_selector
+    query flag, which lets its selector arbitrate candidate disagreements
+    rather than always serving the fused ranker's top hit.
     """
 
     model_config = _BASE_CONFIG
@@ -104,6 +112,9 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
+    SMART_BOT_URL: str = Field(default="")
+    SMART_BOT_TIMEOUT: float = Field(default=60.0)
+    SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=True)
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")

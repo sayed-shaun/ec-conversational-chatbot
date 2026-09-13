@@ -6,6 +6,11 @@ memory: an MCP tool retrieves the closest matching question and the model
 replies grounded in that answer — or admits it doesn't know and points the user
 to `105`.
 
+It is **hybrid**: every turn goes first to the upstream EC smart bot
+(BanglaBERT + FAISS over the curated dataset), which answers it verbatim. Only
+a question that API declines reaches the local LLM. See
+[The hybrid path](#the-hybrid-path).
+
 llama.cpp + FastMCP + FastAPI. Two containers, one `docker compose up`, plus a
 llama-server you already have running.
 
@@ -54,7 +59,8 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | Component | Port | Role |
 |---|---|---|
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/llamacpp/*` and `/ec-llm-service/*` to their upstreams, everything else to the chatbot |
-| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
+| **`ec-conversational-chatbot`** | `:8000` internal | FastAPI: session memory, hybrid routing, the tool-calling loop, static chat UI |
+| **upstream smart bot** | `SMART_BOT_URL` | BanglaBERT + FAISS over the curated dataset; answers first, declines to the LLM |
 | **`ec-conversational-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_ec_services` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
 | **`ec-conversational-vector`** | `:8001` internal | FastAPI: `POST /top_similar` (nearest-neighbour search) + `POST /index` (upload the knowledge base) |
@@ -63,14 +69,45 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 ```mermaid
 flowchart LR
     B([Browser]) -->|"POST /api/v1/chat"| CADDY["caddy"]
-    CADDY --> BOT["ec-conversational-chatbot<br/>tool-calling loop"]
-    BOT <-->|"/v1/chat/completions<br/>+ search_ec_services schema"| LLM["llama-server"]
+    CADDY --> BOT["ec-conversational-chatbot<br/>hybrid router"]
+    BOT -->|"1. every turn"| SMART["upstream smart bot<br/>BanglaBERT + FAISS"]
+    SMART -.->|"answer"| BOT
+    SMART -.->|"unable_to_answer"| BOT
+    BOT <-->|"2. only declined turns<br/>/v1/chat/completions"| LLM["llama-server"]
     BOT -->|"model asked for search_ec_services"| MCP["ec-conversational-mcp"]
     MCP --> SIM["top_similar API"]
     MCP --> TAG[("tag_answer.json")]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
 ```
+
+### The hybrid path
+
+Set `SMART_BOT_URL` and every turn is put to `POST {SMART_BOT_URL}/ec_bot/smart/`
+before anything else happens. That API answers out of the curated dataset word
+for word, which is what you want for NID guidance — fees, ages and deadlines
+reach the citizen exactly as the dataset has them, with no model in the path to
+paraphrase them.
+
+The local LLM runs **only** when that API declines, which it signals with
+`response_tag: "unable_to_answer"`. A failed or unreachable call counts as a
+decline too, so the bot keeps answering while the smart service is down instead
+of returning an error. Leave `SMART_BOT_URL` empty and there is no hybrid at
+all: every turn goes to the LLM, exactly as before.
+
+**Both transcripts are kept.** The smart API is stateful in a
+pass-the-transcript way — it returns a `messages` string it expects back on the
+next turn, carrying the per-turn tag its follow-up handling reads — so that
+string is checkpointed verbatim in its own `smart_messages` column. A
+smart-answered turn is *also* mirrored into the LLM transcript as a plain
+user/assistant exchange, so when a later question does fall through, the model
+inherits everything the citizen has already been told rather than starting
+mid-thread.
+
+In the UI a smart lookup renders as an ordinary tool chip: matched tag and
+score on a hit, a low-confidence warning on a decline followed by the LLM
+stream. `POST /api/v1/chat` reports which engine answered in `source`
+(`"smart"` or `"llm"`), and the `done` SSE frame carries the same field.
 
 **The chatbot orchestrates, not the model.** llama-server never talks to the
 MCP server: it only *asks* for `search_ec_services` in a `tool_calls` response, and
@@ -101,7 +138,7 @@ session history so follow-ups keep context.
 | `tool_call` | `name` + `arguments` |
 | `tool_result` | `confident`, `best_tag`, `best_score`, `threshold`, `candidates[]` |
 | `token` | A chunk of the answer |
-| `done` | The assembled `reply` |
+| `done` | The assembled `reply`, plus `source` (`smart` or `llm`) |
 | `error` | Something failed mid-turn |
 
 `reasoning` is separate because llama-server emits it as a non-standard
@@ -205,6 +242,9 @@ if a required one is missing.
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLAMA_BASE_URL` | **required** | Your llama-server |
+| `SMART_BOT_URL` | *(unset)* | Upstream smart bot; set it to enable the hybrid path, empty = LLM only |
+| `SMART_BOT_TIMEOUT` | `60` | Seconds to wait for one smart-bot turn |
+| `SMART_BOT_USE_LLM_SELECTOR` | `true` | Let the smart bot's selector arbitrate — and decline, which is what hands a turn to the LLM |
 | `TOP_SIMILAR_API_URL` | **required** | Embedding search API |
 | `TAG_ANSWER_URL` | **required** | Knowledge-base dataset |
 | `LLAMA_UPSTREAM`, `EC_LLM_UPSTREAM` | **required with `caddy`** | Upstreams Caddy publishes |
@@ -238,8 +278,9 @@ if a required one is missing.
     │   ├── trace.py        # per-turn record on disk (off unless TRACE_DIR)
     │   └── v1/             # routes.py (/chat, /chat/stream, /reset), schemas.py
     ├── chatbot/            # the conversation, no web framework
-    │   ├── chat.py         # one conversation, the tool-calling loop
-    │   ├── checkpointer.py # SqliteCheckpointer: transcripts + idle expiry
+    │   ├── chat.py         # one conversation: smart-first routing, tool loop
+    │   ├── smart.py        # upstream smart bot; decides what falls to the LLM
+    │   ├── checkpointer.py # SqliteCheckpointer: both transcripts + idle expiry
     │   ├── client.py       # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py       # system prompt and canned replies (Bengali)
     │   ├── sanitize.py     # keeps the tool name out of every reply

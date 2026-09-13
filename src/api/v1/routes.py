@@ -61,7 +61,15 @@ async def chat(req: ChatRequest) -> ChatResponse:
             (time.perf_counter() - started) * 1000,
         )
 
-    return ChatResponse(session_id=session_id, reply=reply)
+    logger.info(
+        "chat reply session=%s source=%s chars=%d",
+        session_id,
+        chat.last_source,
+        len(reply),
+    )
+    return ChatResponse(
+        session_id=session_id, reply=reply, source=chat.last_source or "llm"
+    )
 
 
 def _sse(payload: dict) -> str:
