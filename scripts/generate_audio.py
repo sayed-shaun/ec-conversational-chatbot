@@ -6,9 +6,14 @@ The dataset is fixed -- one canned answer per tag -- so the bot says the same
 few hundred sentences over and over, and synthesising them live costs 6 to 20
 seconds each against the live service. This renders them ahead of time.
 
-Serving them is not this repo's job: caching lives in the TTS service. What
-this produces is the input to that -- one file per tag, plus a manifest
-carrying the exact text each file speaks.
+Serving them is not this repo's job: caching lives in the TTS service. So the
+usual run is --warm, which simply asks the service to say every answer once
+and throws the audio away -- the point is the entry it leaves in that cache,
+not the bytes coming back. Without --warm the audio is written here instead,
+one file per tag, which is for auditioning a voice or handing the clips to
+someone, not for serving.
+
+Either way a manifest records the exact text each answer speaks.
 
 That text is the part only this repo can produce, and it is not the dataset
 entry:
@@ -22,16 +27,23 @@ exactly this text, so a cache keyed on what the service receives has to be
 keyed on these strings, character for character. The manifest is there so that
 can be checked rather than assumed -- `spoken` is what arrives at the service.
 
+One call per distinct text is enough: the service caches on the text and the
+voice, not the output format, so warming it once serves both the buffered wav
+a typed turn asks for and the PCM stream voice mode asks for. The dataset's
+1379 tags share only 892 distinct answers, so that is what actually gets sent.
+
 Usage:
 
-    python scripts/generate_audio.py                    # render what is missing
+    python scripts/generate_audio.py --warm             # fill the service's cache
+    python scripts/generate_audio.py                    # write files here instead
     python scripts/generate_audio.py --out ./audio      # choose the directory
     python scripts/generate_audio.py --limit 20         # a sample, to audition a voice
     python scripts/generate_audio.py --manifest-only    # just the text, no synthesis
     python scripts/generate_audio.py --force            # re-render everything
 
-Re-runs are cheap: a tag whose file already exists is skipped, so an
-interrupted run resumes and a dataset edit renders only what is missing.
+Re-runs are cheap either way: a tag whose file already exists is skipped, and
+a --warm pass over an already-warm cache is a few seconds of cache hits, so an
+interrupted run just resumes and a dataset edit only costs what changed.
 """
 
 import argparse
@@ -43,6 +55,8 @@ import subprocess
 import sys
 import time
 from typing import Dict, Tuple
+
+import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -118,6 +132,27 @@ async def render_one(
     return tag, "done", len(audio)
 
 
+async def warm_one(text: str, args, sem: asyncio.Semaphore) -> Tuple[str, str, int]:
+    """Ask the service to say one text, so its cache holds the result.
+
+    The audio is read and dropped: this exists for the entry it leaves behind.
+    x-cache tells us whether the service had it already, which is what makes a
+    re-run legible -- a second pass should be all HITs.
+    """
+    payload = {"input": text, "voice": args.voice, "response_format": "wav"}
+    async with sem:
+        try:
+            async with httpx.AsyncClient(timeout=args.timeout) as client:
+                resp = await client.post(
+                    f"{settings.ASR_TTS_URL.rstrip('/')}/v1/audio/speech", json=payload
+                )
+                resp.raise_for_status()
+                status = "hit" if resp.headers.get("x-cache") == "HIT" else "warmed"
+                return text, status, len(resp.content)
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not end the run
+            return text, f"error: {type(exc).__name__}: {exc}"[:120], 0
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--dataset", default=None,
@@ -129,6 +164,13 @@ async def main() -> int:
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--limit", type=int, default=0, help="render only the first N")
     parser.add_argument("--force", action="store_true", help="re-render existing files")
+    parser.add_argument(
+        "--warm",
+        action="store_true",
+        help="fill the TTS service's cache instead of writing files here",
+    )
+    parser.add_argument("--timeout", type=float, default=180.0,
+                        help="seconds to wait for one synthesis")
     parser.add_argument(
         "--manifest-only",
         action="store_true",
@@ -154,6 +196,9 @@ async def main() -> int:
         _write_manifest(texts, args)
         print(f"wrote {len(texts)} spoken texts to {args.out}/manifest.json")
         return 0
+
+    if args.warm:
+        return await _warm(texts, args)
 
     if args.format == "mp3" and not shutil.which("ffmpeg"):
         raise SystemExit("ffmpeg is required for --format mp3 (or use --format wav)")
@@ -193,6 +238,47 @@ async def main() -> int:
           f"in {(time.perf_counter()-started)/60:.1f} min, "
           f"{total_bytes/1024/1024:.0f} MB total")
     print(f"manifest: {os.path.join(args.out, 'manifest.json')}")
+    return 1 if failed else 0
+
+
+async def _warm(texts: Dict[str, str], args) -> int:
+    """Ask the service to say every distinct answer once.
+
+    Distinct is the point: the dataset repeats itself heavily -- many tags
+    share a byte-identical answer -- and the service keys its cache on the
+    text, so sending the duplicates would be several hundred pointless
+    synthesis requests against a production box.
+    """
+    distinct = sorted(set(texts.values()))
+    print(f"warming   : {len(distinct)} distinct answers from {len(texts)} tags")
+    print(f"service   : {settings.ASR_TTS_URL}")
+    print(f"voice     : {args.voice}   concurrency={args.concurrency}\n")
+
+    sem = asyncio.Semaphore(args.concurrency)
+    started = time.perf_counter()
+    warmed = hits = failed = 0
+
+    tasks = [asyncio.create_task(warm_one(t, args, sem)) for t in distinct]
+    for n, task in enumerate(asyncio.as_completed(tasks), 1):
+        _, status, _ = await task
+        if status == "warmed":
+            warmed += 1
+        elif status == "hit":
+            hits += 1
+        else:
+            failed += 1
+            if failed <= 10:
+                print(f"  [{n}/{len(tasks)}] {status}")
+        if n % 25 == 0 or n == len(tasks):
+            rate = n / max(time.perf_counter() - started, 1e-9)
+            left = (len(tasks) - n) / rate if rate else 0
+            print(f"  [{n}/{len(tasks)}] warmed={warmed} already={hits} "
+                  f"failed={failed}  ~{left/60:.0f} min left")
+
+    print(f"\nwarmed {warmed}, already cached {hits}, failed {failed} "
+          f"in {(time.perf_counter()-started)/60:.1f} min")
+    if failed:
+        print("re-run to retry the failures; cached entries come back as hits")
     return 1 if failed else 0
 
 

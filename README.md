@@ -159,35 +159,49 @@ python scripts/load_test.py --url http://YOUR_HOST:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
-### Rendering the answers to audio
+### Pre-rendering the answers
 
 The dataset is fixed — one canned answer per tag — so the bot says the same few
-hundred sentences over and over, and synthesising them live costs **6 to 20
-seconds** each. `scripts/generate_audio.py` renders them once:
+hundred sentences over and over, and synthesising them live costs **5 to 34
+seconds** each. The TTS service caches its own output (it answers `x-cache:
+HIT`), so the job here is to fill that cache once:
 
 ```bash
-python scripts/generate_audio.py                  # one file per tag, into ./audio
-python scripts/generate_audio.py --limit 20       # a sample, to audition a voice
-python scripts/generate_audio.py --manifest-only  # just the spoken text, no synthesis
+python scripts/generate_audio.py --warm            # ask it to say every answer once
+python scripts/generate_audio.py --warm --limit 10 # a sample first
 ```
 
-**Serving them is the TTS service's job, not this repo's** — nothing here reads
-the output. What this produces is the input to that: one file per tag, plus a
-`manifest.json` whose `spoken` field is the exact text each file says.
+Measured against the warmed service:
 
-That text is the part only this repo can produce, and it is not the dataset
-entry. Two things happen to an answer before it reaches the TTS service:
+| | cold | cached |
+|---|---|---|
+| `/tts` buffered | 33,650 ms | 263 ms |
+| PCM stream, first byte | 4,683 ms | 16 ms |
+| voice mode, first sound | — | 39 ms (in Chrome) |
+
+**One call per distinct text is enough.** The service keys on the text and the
+voice, not the output format — warming `wav` makes the PCM stream a hit too, so
+both the buffered path a typed turn uses and the stream voice mode uses are
+covered by a single request. The dataset's 1379 tags share only **892 distinct
+answers**, and `--warm` sends only those. Re-running is all cache hits, so an
+interrupted pass just resumes and a dataset edit costs only what changed.
+
+What gets sent is not the dataset entry. Two things happen to an answer first,
+and both live here rather than in the TTS service:
 
 - the smart bot appends a constant closing line to every answer it serves;
 - `transform.for_speech` rewrites it for a voice — `২৩০` becomes `দুইশ ত্রিশ`,
   `NID` becomes `এনআইডি`, markdown goes.
 
-`POST /api/v1/tts` sends the service exactly that string, so **a cache keyed on
-what the service receives has to be keyed on these strings, character for
-character.** The manifest exists so that can be checked rather than assumed.
+`POST /api/v1/tts` sends the service exactly that string, so the warm pass has
+to send the same one, character for character. `--manifest-only` writes those
+strings out (`spoken`, per tag) without synthesising anything, so the match can
+be checked rather than assumed.
 
-`ffmpeg` is needed for the default MP3 output (~120 MB for the dataset, against
-~1.7 GB as WAV); `--format wav` skips the encode.
+Without `--warm` the script writes the audio here instead, one file per tag
+under `./audio` — for auditioning a voice or handing the clips to someone, not
+for serving. That path needs `ffmpeg` for the default MP3 output; `--format
+wav` skips the encode.
 
 ### Indexing the knowledge base
 
