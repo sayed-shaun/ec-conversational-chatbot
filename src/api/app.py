@@ -23,8 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.v1 import router as v1_router
 from src.api import trace
+from src.api.v1 import router as v1_router
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.smart import smart_client
 from src.core.config import chatbot_settings as settings

@@ -103,6 +103,11 @@ class ChatbotSettings(_Settings):
     SMART_BOT_USE_LLM_SELECTOR forwards the API's own use_llm_selector
     query flag, which lets its selector arbitrate candidate disagreements
     rather than always serving the fused ranker's top hit.
+
+    TTS_CACHE_DIR holds speech rendered ahead of time by
+    scripts/generate_audio.py. An empty value turns the cache off; an
+    empty directory is simply all misses, so a deployment that never runs
+    the generator behaves exactly as it did before the cache existed.
     """
 
     model_config = _BASE_CONFIG
@@ -124,6 +129,7 @@ class ChatbotSettings(_Settings):
     TRACE_TTL_DAYS: int = Field(default=7, ge=0)
     TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
     TTS_MAX_CHARS: int = Field(default=3000, ge=1)
+    TTS_CACHE_DIR: str = Field(default="/data/tts-cache")
     CORS_ALLOW_ORIGINS: str = Field(default="*")
     MAX_HISTORY_TURNS: int = Field(default=12, ge=1)
     MAX_TOOL_HOPS: int = Field(default=3, ge=1)

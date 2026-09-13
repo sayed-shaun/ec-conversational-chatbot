@@ -91,6 +91,43 @@ function createSpeechStream(ctx, sampleRate, channels) {
 }
 
 /*
+ * Plays a complete audio file through an <audio> element, keeping the same
+ * contract as the streaming path: resolve when it finishes, fire `onStart` at
+ * the first sound, and register a stop so the user can cut it off.
+ */
+function playBuffered(blob, onStart, registerStop) {
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  let started = false;
+
+  registerStop(() => {
+    audio.pause();
+    URL.revokeObjectURL(url);
+  });
+
+  return new Promise((resolve, reject) => {
+    const done = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    audio.addEventListener('playing', () => {
+      if (!started) {
+        started = true;
+        onStart();
+      }
+    });
+    audio.addEventListener('ended', done);
+    // A stop mid-playback resolves rather than rejects: the caller asked for
+    // silence and got it, which is not a failure to fall back from.
+    audio.addEventListener('pause', done);
+    audio.addEventListener('error', () =>
+      reject(new Error('could not play cached audio'))
+    );
+    audio.play().catch(reject);
+  });
+}
+
+/*
  * Streams one reply and plays it. Resolves when the audio finishes, and
  * rejects if the stream could not be started at all -- so the caller can
  * fall back to the buffered path. `onStart` fires at the first audio, which
@@ -112,6 +149,19 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
     }),
   });
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+  /*
+   * A pre-rendered reply comes back whole, not as a PCM stream, however the
+   * request was phrased -- there was nothing to synthesise, so the server
+   * sends the file (see the cache branch in the /tts route). Feeding that to
+   * the PCM path below would play the encoded bytes as samples, which is
+   * noise, so the content type decides which player runs. There is nothing to
+   * lose by not streaming here: the audio already exists.
+   */
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.startsWith('audio/pcm')) {
+    return playBuffered(await res.blob(), onStart, registerStop);
+  }
 
   // Read the format off the response rather than assuming it, so a change
   // of voice or model upstream cannot silently detune playback.
