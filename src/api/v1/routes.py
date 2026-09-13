@@ -29,7 +29,6 @@ from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 from src.speech import transform
 from src.speech.asr import asr_client
-from src.speech.cache import speech_cache
 from src.speech.tts import tts_client
 
 logger = get_logger(__name__)
@@ -227,39 +226,8 @@ async def tts(req: TtsRequest) -> Response:
     removed, digits read as Bangla words, initialisms respelled. This ran in
     the page previously, which left the endpoint reading asterisks aloud to
     anyone else.
-
-    That transform runs before the cache is consulted, because the spoken
-    text is the cache key -- two spellings of one sentence have to collapse
-    to a single entry, which is also why the transform settles on one
-    spelling of ড়/ঢ়/য় on the way out.
     """
     req.input = transform.for_speech(req.input)[: settings.TTS_MAX_CHARS]
-
-    cached = speech_cache.lookup(req.input, req.voice)
-    if cached is not None:
-        audio, content_type = cached
-        logger.info(
-            "TTS cache hit chars=%d bytes=%d streamed=%s",
-            len(req.input),
-            len(audio),
-            req.stream,
-        )
-        if req.turn_id:
-            trace.record_tts(
-                req.turn_id,
-                req.session_id,
-                req.input,
-                req.voice,
-                audio,
-                streamed=False,
-                ms=0.0,
-            )
-        # Answered even when the caller asked to stream. Streaming exists to
-        # start the audio before synthesis has finished; there is nothing to
-        # wait for here, so the whole file is the faster answer. The content
-        # type is what tells the browser to play it buffered rather than
-        # feeding it to the PCM path -- see speakStreaming in static/js/tts.js.
-        return Response(content=audio, media_type=content_type)
 
     if req.stream:
         return await _stream_tts(req)

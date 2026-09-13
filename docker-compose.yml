@@ -103,7 +103,6 @@ services:
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       SESSION_SWEEP_MINUTES: ${SESSION_SWEEP_MINUTES:-10}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
-      TTS_CACHE_DIR: ${TTS_CACHE_DIR:-/data/tts-cache}
       TRACE_DIR: ${TRACE_DIR:-}
       TRACE_TTL_DAYS: ${TRACE_TTL_DAYS:-7}
       TRACE_SWEEP_HOURS: ${TRACE_SWEEP_HOURS:-6}
@@ -112,11 +111,6 @@ services:
     volumes:
       - ./static:/app/static:ro
       - chat-sessions:/data
-      # Pre-rendered speech, written by scripts/generate_audio.py. Its own
-      # volume rather than a subdirectory of /data so that regenerating it,
-      # or dropping it to reclaim the space, does not touch the session
-      # database living next door.
-      - tts-cache:/data/tts-cache
       - ./data/tracing:/data/tracing
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -165,6 +159,5 @@ networks:
 
 volumes:
   chat-sessions:
-  tts-cache:
   pgvector-data:
   vector-model-cache:

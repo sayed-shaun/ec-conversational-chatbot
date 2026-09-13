@@ -159,49 +159,35 @@ python scripts/load_test.py --url http://YOUR_HOST:9100 \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
-### Pre-rendered speech
+### Rendering the answers to audio
 
-Synthesis is the slowest thing in a spoken turn by a wide margin — **6 to 20
-seconds** for one FAQ answer against the live service, where the rest of the
-turn is under a second. But the bot almost never says anything new: the smart
-bot answers out of a fixed dataset, one canned answer per tag. So the answers
-are rendered to audio once, ahead of time:
+The dataset is fixed — one canned answer per tag — so the bot says the same few
+hundred sentences over and over, and synthesising them live costs **6 to 20
+seconds** each. `scripts/generate_audio.py` renders them once:
 
 ```bash
-python scripts/generate_audio.py            # render what is missing
-python scripts/generate_audio.py --force    # re-render everything
-python scripts/generate_audio.py --limit 20 # a sample, to audition a voice
+python scripts/generate_audio.py                  # one file per tag, into ./audio
+python scripts/generate_audio.py --limit 20       # a sample, to audition a voice
+python scripts/generate_audio.py --manifest-only  # just the spoken text, no synthesis
 ```
 
-`POST /api/v1/tts` checks that cache before synthesising, so a pre-rendered
-reply comes back in **13–40 ms instead of 3–7 seconds**.
+**Serving them is the TTS service's job, not this repo's** — nothing here reads
+the output. What this produces is the input to that: one file per tag, plus a
+`manifest.json` whose `spoken` field is the exact text each file says.
 
-| | cached | synthesised |
-|---|---|---|
-| latency | 13–40 ms | 3,200–7,200 ms |
-| size | ~94 KB (mp3) | ~600–1,600 KB (wav) |
+That text is the part only this repo can produce, and it is not the dataset
+entry. Two things happen to an answer before it reaches the TTS service:
 
-**The key is the spoken text, not the tag.** `/tts` only ever receives text,
-and keying on the words means every repeat is a hit — including the closing
-question the smart bot appends to every answer. It also makes a stale entry
-impossible: edit an answer or the transform and the text changes, so the key
-changes and the old file is simply never asked for again (`--prune` deletes
-it). It deduplicates too — **1379 tags render to 892 distinct recordings**,
-because 487 answers are byte-identical to another.
+- the smart bot appends a constant closing line to every answer it serves;
+- `transform.for_speech` rewrites it for a voice — `২৩০` becomes `দুইশ ত্রিশ`,
+  `NID` becomes `এনআইডি`, markdown goes.
 
-Two things the generator does that the TTS service could not:
+`POST /api/v1/tts` sends the service exactly that string, so **a cache keyed on
+what the service receives has to be keyed on these strings, character for
+character.** The manifest exists so that can be checked rather than assumed.
 
-- It appends the smart bot's constant closing line, so the cached text is what
-  the citizen actually hears rather than the bare dataset entry.
-- It runs `transform.for_speech` first — `২৩০` becomes `দুইশ ত্রিশ`, `NID`
-  becomes `এনআইডি`. Rendering on the TTS service would bake the raw digits
-  into the audio. That transform lives here, which is why this job does too;
-  the service is a stateless text-to-audio endpoint with no notion of tags,
-  the dataset, or how a fee is read aloud.
-
-`ffmpeg` is needed only by the generator, which encodes to MP3 (~54 MB for the
-dataset, against ~790 MB as WAV). The API container never encodes — it serves
-what the generator wrote — so it needs no codec installed.
+`ffmpeg` is needed for the default MP3 output (~120 MB for the dataset, against
+~1.7 GB as WAV); `--format wav` skips the encode.
 
 ### Indexing the knowledge base
 
@@ -297,7 +283,6 @@ if a required one is missing.
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
 | `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables. Backstop for a chat that never said goodbye |
 | `TRACE_TTL_DAYS` | `7` | Days a trace recording is kept; `0` keeps forever |
-| `TTS_CACHE_DIR` | `/data/tts-cache` | Pre-rendered speech; empty disables the cache |
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `9100` | The only port published on the host |
@@ -334,7 +319,6 @@ if a required one is missing.
     ├── speech/             # the voice path; a typed turn touches none of it
     │   ├── asr.py          # audio up, transcript back
     │   ├── tts.py          # text down, audio back
-    │   ├── cache.py        # speech rendered ahead of time, keyed by its words
     │   └── transform/      # a reply rewritten into something the voice can say
     │       ├── markup.py       # markdown out
     │       ├── addresses.py    # URLs said as names, paths dropped

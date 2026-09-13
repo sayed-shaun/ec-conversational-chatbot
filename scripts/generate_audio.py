@@ -1,39 +1,37 @@
 #!/usr/bin/env python3
 """
-Render every answer in the FAQ dataset to speech, once, ahead of time.
+Render every answer in the FAQ dataset to an audio file, once.
 
-Why this exists: synthesis is the slowest part of a spoken turn by a wide
-margin -- 6 to 20 seconds for one answer against the live service, where the
-rest of the turn is under a second -- and the bot almost never says anything
-new. The smart bot answers out of a fixed dataset, one canned answer per tag,
-so the same few hundred sentences are spoken over and over. Rendering them
-once turns that wait into a file read (see src/speech/cache.py).
+The dataset is fixed -- one canned answer per tag -- so the bot says the same
+few hundred sentences over and over, and synthesising them live costs 6 to 20
+seconds each against the live service. This renders them ahead of time.
 
-What gets rendered is the text the citizen actually hears, which is not the
-raw dataset entry:
+Serving them is not this repo's job: caching lives in the TTS service. What
+this produces is the input to that -- one file per tag, plus a manifest
+carrying the exact text each file speaks.
 
-  * the smart bot appends a constant closing question to every answer, so it
-    is appended here too, otherwise every single entry would miss;
-  * transform.for_speech then rewrites it for a voice -- digits into Bangla
-    words, initialisms respelled, markdown gone.
+That text is the part only this repo can produce, and it is not the dataset
+entry:
 
-That second step is the reason this job lives in this repo rather than on the
-TTS service. The service is a stateless text-to-audio endpoint with no notion
-of the dataset, the tags, or how a fee should be read aloud; rendering there
-would bake "২৩০" into the audio as digits instead of "দুইশ ত্রিশ".
+  * the smart bot appends a constant closing line to every answer it serves;
+  * transform.for_speech then rewrites the result for a voice -- digits into
+    Bangla words, initialisms respelled, markdown gone.
+
+It matters for whoever builds the cache: POST /api/v1/tts sends the service
+exactly this text, so a cache keyed on what the service receives has to be
+keyed on these strings, character for character. The manifest is there so that
+can be checked rather than assumed -- `spoken` is what arrives at the service.
 
 Usage:
 
     python scripts/generate_audio.py                    # render what is missing
+    python scripts/generate_audio.py --out ./audio      # choose the directory
+    python scripts/generate_audio.py --limit 20         # a sample, to audition a voice
+    python scripts/generate_audio.py --manifest-only    # just the text, no synthesis
     python scripts/generate_audio.py --force            # re-render everything
-    python scripts/generate_audio.py --limit 20         # a sample, to check a voice
-    python scripts/generate_audio.py --format wav       # skip the encode step
 
-Re-runs are cheap: an entry whose audio already exists is skipped, so an
-interrupted run resumes, and a dataset edit renders only what changed. The key
-is the spoken text, so changing an answer or the transform makes a new entry
-and quietly abandons the old one -- use --prune to delete what is no longer
-reachable.
+Re-runs are cheap: a tag whose file already exists is skipped, so an
+interrupted run resumes and a dataset edit renders only what is missing.
 """
 
 import argparse
@@ -50,13 +48,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.config import chatbot_settings as settings  # noqa: E402
 from src.speech import transform  # noqa: E402
-from src.speech.cache import key_for, speech_cache  # noqa: E402
 from src.speech.tts import tts_client  # noqa: E402
 
 #: What the smart bot adds to the end of every answer it serves. Confirmed
 #: against the live API: its `response` is the dataset entry followed by
-#: exactly this. Rendering the answer without it would key the cache on text
-#: the citizen never hears, and every lookup would miss.
+#: exactly this. Rendering the answer without it would produce audio for text
+#: no citizen ever hears.
 CLOSING = " \n\nআপনাকে আর কোন তথ্য দিয়ে সহযোগিতা করতে পারি?"
 
 
@@ -69,17 +66,13 @@ def load_dataset(path: str) -> Dict[str, str]:
 
 
 def spoken_text(answer: str, closing: bool) -> str:
-    """The exact words the citizen hears, and so the cache key."""
+    """The exact words the citizen hears, and so what reaches the TTS service."""
     return transform.for_speech(answer + CLOSING if closing else answer)
 
 
 def encode(wav: bytes, fmt: str, bitrate: str) -> bytes:
-    """Compress one WAV, because 1379 of them is 1.7 GB and speech does not
-    need it -- the same clip is about 50 KB as MP3.
-
-    ffmpeg is required only here, in the generator. The API container never
-    encodes: it serves whatever this wrote, so it needs no codec installed.
-    """
+    """Compress one WAV. The dataset is roughly 1.7 GB of WAV against 120 MB of
+    MP3, and speech at 48 kbps is indistinguishable over a phone."""
     if fmt == "wav":
         return wav
 
@@ -97,50 +90,50 @@ def encode(wav: bytes, fmt: str, bitrate: str) -> bytes:
 
 async def render_one(
     tag: str, text: str, args, sem: asyncio.Semaphore
-) -> Tuple[str, str, int, float]:
-    """Synthesise and store one entry. Returns (tag, status, bytes, seconds)."""
-    suffix = "." + args.format
-    path = speech_cache.path_for(text, args.voice, suffix)
+) -> Tuple[str, str, int]:
+    """Synthesise and write one tag's file. Returns (tag, status, bytes)."""
+    path = os.path.join(args.out, f"{tag}.{args.format}")
 
     if os.path.exists(path) and not args.force:
-        return tag, "skip", os.path.getsize(path), 0.0
+        return tag, "skip", os.path.getsize(path)
 
-    started = time.perf_counter()
     async with sem:
         try:
             wav, _ = await tts_client.synthesize(text, args.voice, "wav", "")
         except Exception as exc:  # noqa: BLE001 - one bad entry must not end the run
-            return tag, f"error: {type(exc).__name__}: {exc}"[:120], 0, 0.0
+            return tag, f"error: {type(exc).__name__}: {exc}"[:120], 0
 
     try:
         audio = await asyncio.to_thread(encode, wav, args.format, args.bitrate)
     except Exception as exc:  # noqa: BLE001
-        return tag, f"error: {exc}"[:120], 0, 0.0
+        return tag, f"error: {exc}"[:120], 0
 
     # Written beside the target and moved into place, so a run interrupted
-    # mid-write cannot leave a truncated file that later reads as a cache hit
-    # and plays half an answer.
+    # mid-write cannot leave a truncated file that later looks complete.
     tmp = path + ".part"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(tmp, "wb") as handle:
         handle.write(audio)
     os.replace(tmp, path)
 
-    return tag, "done", len(audio), time.perf_counter() - started
+    return tag, "done", len(audio)
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--dataset", default=None,
-                        help="path to tag_answer.json (default: look beside the repo)")
+                        help="path to tag_answer.json (default: look in the repo)")
+    parser.add_argument("--out", default="audio", help="output directory")
     parser.add_argument("--voice", default="Aditi")
     parser.add_argument("--format", default="mp3", choices=["mp3", "wav"])
     parser.add_argument("--bitrate", default="48k")
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--limit", type=int, default=0, help="render only the first N")
-    parser.add_argument("--force", action="store_true", help="re-render existing")
-    parser.add_argument("--prune", action="store_true",
-                        help="delete cache files the dataset no longer reaches")
+    parser.add_argument("--force", action="store_true", help="re-render existing files")
+    parser.add_argument(
+        "--manifest-only",
+        action="store_true",
+        help="write the spoken text and stop, without synthesising",
+    )
     parser.add_argument(
         "--no-closing",
         action="store_true",
@@ -149,22 +142,25 @@ async def main() -> int:
     args = parser.parse_args()
 
     dataset_path = args.dataset or _find_dataset()
-    if not speech_cache.enabled:
-        raise SystemExit("TTS_CACHE_DIR is empty; set it before generating")
-    if args.format == "mp3" and not shutil.which("ffmpeg"):
-        raise SystemExit("ffmpeg is required for --format mp3 (or use --format wav)")
-
     data = load_dataset(dataset_path)
     items = sorted(data.items())
     if args.limit:
         items = items[: args.limit]
 
     texts = {tag: spoken_text(answer, not args.no_closing) for tag, answer in items}
-    os.makedirs(speech_cache.directory, exist_ok=True)
+    os.makedirs(args.out, exist_ok=True)
+
+    if args.manifest_only:
+        _write_manifest(texts, args)
+        print(f"wrote {len(texts)} spoken texts to {args.out}/manifest.json")
+        return 0
+
+    if args.format == "mp3" and not shutil.which("ffmpeg"):
+        raise SystemExit("ffmpeg is required for --format mp3 (or use --format wav)")
 
     print(f"dataset   : {dataset_path} ({len(data)} entries)")
     print(f"rendering : {len(items)}  voice={args.voice}  format={args.format}")
-    print(f"cache     : {speech_cache.directory}")
+    print(f"output    : {os.path.abspath(args.out)}")
     print(f"service   : {settings.ASR_TTS_URL}\n")
 
     sem = asyncio.Semaphore(args.concurrency)
@@ -176,7 +172,7 @@ async def main() -> int:
         asyncio.create_task(render_one(tag, texts[tag], args, sem)) for tag, _ in items
     ]
     for n, task in enumerate(asyncio.as_completed(tasks), 1):
-        tag, status, size, _ = await task
+        tag, status, size = await task
         total_bytes += size
         if status == "done":
             done += 1
@@ -191,14 +187,12 @@ async def main() -> int:
             print(f"  [{n}/{len(tasks)}] done={done} skip={skipped} fail={failed} "
                   f"{total_bytes/1024/1024:.0f} MB  ~{left/60:.0f} min left")
 
-    if args.prune:
-        _prune(set(texts.values()), args.voice, args.format)
-
     _write_manifest(texts, args)
 
     print(f"\nrendered {done}, skipped {skipped}, failed {failed} "
           f"in {(time.perf_counter()-started)/60:.1f} min, "
           f"{total_bytes/1024/1024:.0f} MB total")
+    print(f"manifest: {os.path.join(args.out, 'manifest.json')}")
     return 1 if failed else 0
 
 
@@ -207,43 +201,31 @@ def _find_dataset() -> str:
     for candidate in (
         os.path.join("data", "tag_answer.json"),
         os.path.join("src", "mcp", "tag_answer.json"),
-        settings.TAG_ANSWER_PATH if hasattr(settings, "TAG_ANSWER_PATH") else "",
+        getattr(settings, "TAG_ANSWER_PATH", ""),
     ):
         if candidate and os.path.exists(candidate):
             return candidate
     raise SystemExit("could not find tag_answer.json; pass --dataset")
 
 
-def _prune(live: set, voice: str, fmt: str) -> None:
-    """Delete entries the current dataset no longer asks for."""
-    keep = {key_for(text, voice) + "." + fmt for text in live}
-    removed = 0
-    for name in os.listdir(speech_cache.directory):
-        if name.endswith(".part") or name == "manifest.json":
-            continue
-        if name not in keep:
-            os.remove(os.path.join(speech_cache.directory, name))
-            removed += 1
-    print(f"pruned {removed} unreachable file(s)")
-
-
 def _write_manifest(texts: Dict[str, str], args) -> None:
-    """Record what was rendered, for ops.
+    """Record what each file says.
 
-    The cache itself is content-addressed and needs no index; this is so a
-    human can answer "is this tag rendered, and which file is it" without
-    recomputing hashes by hand.
+    `spoken` is the payload POST /api/v1/tts sends to the TTS service for that
+    tag, character for character. Anything keying a cache on the text the
+    service receives has to key on this, so it is written out rather than left
+    to be re-derived.
     """
     manifest = {
         "voice": args.voice,
         "format": args.format,
         "closing": not args.no_closing,
         "entries": {
-            tag: {"key": key_for(text, args.voice), "chars": len(text)}
+            tag: {"file": f"{tag}.{args.format}", "spoken": text}
             for tag, text in sorted(texts.items())
         },
     }
-    path = os.path.join(speech_cache.directory, "manifest.json")
+    path = os.path.join(args.out, "manifest.json")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=1)
 
