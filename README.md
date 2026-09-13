@@ -251,7 +251,8 @@ if a required one is missing.
 | `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
-| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
+| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables. Backstop for a chat that never said goodbye |
+| `TRACE_TTL_DAYS` | `7` | Days a trace recording is kept; `0` keeps forever |
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `9100` | The only port published on the host |
@@ -397,9 +398,14 @@ identical runs) — the server flag is the dependable lever.
   durability, not scale — replicas sharing one file over a volume is fragile,
   and across hosts it doesn't work. That needs Redis or Postgres behind the same
   interface.
-- **Sessions expire on idle**, since HTTP gives no end-of-chat signal. This also
-  bounds retention, which matters because transcripts contain citizens'
-  questions.
+- **Closing the chat deletes it, best-effort.** The UI holds the session id in
+  the tab (not `localStorage`) and posts `/reset` on `pagehide` with a
+  `keepalive` fetch, so shutting the tab removes the transcript server-side and
+  reopening starts a fresh conversation. A crash or a killed tab sends nothing,
+  which is what `SESSION_TTL_MINUTES` is the backstop for — HTTP gives no
+  reliable end-of-chat signal, so idleness still has to cover the gap. Both
+  paths delete the smart transcript along with the LLM one; the smart API keeps
+  no server-side copy of its own.
 - **No auth on any service.** Beyond localhost/LAN, put an authenticating
   reverse proxy in front of `8000`, `8080` and `9000`.
 
