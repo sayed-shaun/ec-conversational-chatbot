@@ -432,7 +432,9 @@ const VoiceMode = {
      */
     const turnId = (crypto.randomUUID ? crypto.randomUUID()
                                       : String(Date.now()) + Math.random().toString(16).slice(2));
-    const traceMeta = () => ({ turnId, sessionId: getSessionId() });
+    // `tag` is filled in once the turn answers; speech happens after.
+    let replyTag = '';
+    const traceMeta = () => ({ turnId, sessionId: getSessionId(), tag: replyTag });
 
     // Whatever is still being said answers the question before this one.
     this.stopPlayback();
@@ -486,6 +488,8 @@ const VoiceMode = {
       result = { text: '', failed: true };
     }
     if (stale()) return;
+
+    replyTag = (result && result.tag) || '';
 
     if (!result || result.failed || !result.text) {
       this.setOrbState('error');

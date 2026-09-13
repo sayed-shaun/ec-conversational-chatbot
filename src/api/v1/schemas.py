@@ -58,6 +58,7 @@ class ChatResponse(BaseModel):
     session_id: str
     reply: str
     source: Literal["smart", "llm"] = "llm"
+    tag: str = ""
 
 
 class ResetResponse(BaseModel):
@@ -76,10 +77,17 @@ class TtsRequest(BaseModel):
 
     `turn_id` ties this reply to the ASR request that prompted it, so both
     halves land in one trace record.
+
+    `tag` is the knowledge-base tag from the chat turn this text is the reply
+    to, and is forwarded to the TTS service. A canned answer carries one and
+    is worth caching -- the same words are read to every citizen who asks. An
+    LLM answer carries none, and caching it would evict the canned ones for
+    wording nobody will ask for twice.
     """
 
     input: str
     voice: str = "Aditi"
+    tag: str = ""
     response_format: str = "wav"
     stream: bool = False
     description: str = ""

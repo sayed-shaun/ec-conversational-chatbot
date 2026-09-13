@@ -33,12 +33,15 @@ class TtsClient:
         voice: str = "Aditi",
         response_format: str = "wav",
         description: str = "",
+        tag: str = "",
     ) -> Tuple[bytes, str]:
         """Returns (audio_bytes, content_type). Raises httpx errors on failure."""
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/audio/speech",
-                json=self._payload(input_text, voice, response_format, description),
+                json=self._payload(
+                    input_text, voice, response_format, description, tag
+                ),
             )
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "audio/wav")
@@ -46,13 +49,20 @@ class TtsClient:
 
     @staticmethod
     def _payload(
-        input_text: str, voice: str, response_format: str, description: str
+        input_text: str,
+        voice: str,
+        response_format: str,
+        description: str,
+        tag: str = "",
     ) -> dict:
         """Build the synthesis request body.
 
         `description` is included only when set: the service rejects some
         fields given as empty strings, and omitting an unset optional
-        field is the safer default.
+        field is the safer default. `tag` follows the same rule, and says
+        which knowledge-base entry the text came from -- the service caches
+        a tagged reply and declines to cache an untagged one, so leaving it
+        out is how an LLM answer asks not to be cached.
         """
         payload = {
             "input": input_text,
@@ -61,6 +71,8 @@ class TtsClient:
         }
         if description:
             payload["description"] = description
+        if tag:
+            payload["tag"] = tag
         return payload
 
     @asynccontextmanager
@@ -69,6 +81,7 @@ class TtsClient:
         input_text: str,
         voice: str = "Aditi",
         description: str = "",
+        tag: str = "",
     ) -> AsyncIterator[httpx.Response]:
         """Open a streaming synthesis request, yielding the live response.
 
@@ -82,7 +95,7 @@ class TtsClient:
         after 2.2s streaming versus 12.6s buffered. Generation runs about 2.7x
         faster than playback, so once playback starts it does not catch up.
         """
-        payload = self._payload(input_text, voice, "pcm", description)
+        payload = self._payload(input_text, voice, "pcm", description, tag)
         payload["stream"] = True
         client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0))
         try:

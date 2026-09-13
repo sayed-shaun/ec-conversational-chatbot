@@ -68,7 +68,10 @@ async def chat(req: ChatRequest) -> ChatResponse:
         len(reply),
     )
     return ChatResponse(
-        session_id=session_id, reply=reply, source=chat.last_source or "llm"
+        session_id=session_id,
+        reply=reply,
+        source=chat.last_source or "llm",
+        tag=chat.last_tag,
     )
 
 
@@ -235,7 +238,7 @@ async def tts(req: TtsRequest) -> Response:
     started = time.perf_counter()
     try:
         audio, content_type = await tts_client.synthesize(
-            req.input, req.voice, req.response_format, req.description
+            req.input, req.voice, req.response_format, req.description, req.tag
         )
     except httpx.HTTPStatusError as exc:
         logger.warning("TTS service returned %s", exc.response.status_code)
@@ -283,7 +286,7 @@ async def _stream_tts(req: TtsRequest) -> StreamingResponse:
     and give up the time-to-first-sound this route exists for; the buffer is
     bounded by TTS_MAX_CHARS on the client.
     """
-    stream_cm = tts_client.stream(req.input, req.voice, req.description)
+    stream_cm = tts_client.stream(req.input, req.voice, req.description, req.tag)
     try:
         resp = await stream_cm.__aenter__()
     except httpx.HTTPStatusError as exc:

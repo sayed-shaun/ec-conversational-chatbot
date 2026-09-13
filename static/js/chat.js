@@ -78,6 +78,9 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
   let answerRaw = '';
   let failed = false;
   let finalReply = '';
+  // The knowledge-base entry this answer came from, '' when the LLM wrote
+  // it. Carried to the TTS call, which is where it decides caching.
+  let finalTag = '';
 
   const handle = (ev) => {
 
@@ -183,6 +186,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
           renderAnswer(answerEl, answerRaw);
         }
         finalReply = ev.reply || answerRaw;
+        finalTag = ev.tag || '';
 
         const total = performance.now() - startedAt;
         const timing = el('div', 'timing', bubble);
@@ -271,7 +275,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
     stickToBottom();
   }
 
-  return { text: finalReply, failed };
+  return { text: finalReply, failed, tag: finalTag };
 }
 
 async function submit() {

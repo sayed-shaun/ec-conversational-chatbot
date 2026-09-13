@@ -109,6 +109,13 @@ score on a hit, a low-confidence warning on a decline followed by the LLM
 stream. `POST /api/v1/chat` reports which engine answered in `source`
 (`"smart"` or `"llm"`), and the `done` SSE frame carries the same field.
 
+Both also carry `tag` — the knowledge-base entry the answer came from, empty
+when the LLM wrote it. The browser hands it back on the matching `/api/v1/tts`
+call and the route forwards it to the TTS service, which **caches a tagged
+reply and declines to cache an untagged one**. That split is the point: a
+canned answer is read verbatim to every citizen who asks it, while an LLM
+answer is new wording every time and would only evict the ones that repeat.
+
 **The chatbot orchestrates, not the model.** llama-server never talks to the
 MCP server: it only *asks* for `search_ec_services` in a `tool_calls` response, and
 `src/chatbot/chat.py` executes the call, appends the result to the transcript,
@@ -138,7 +145,7 @@ session history so follow-ups keep context.
 | `tool_call` | `name` + `arguments` |
 | `tool_result` | `confident`, `best_tag`, `best_score`, `threshold`, `candidates[]` |
 | `token` | A chunk of the answer |
-| `done` | The assembled `reply`, plus `source` (`smart` or `llm`) |
+| `done` | The assembled `reply`, plus `source` (`smart` or `llm`) and `tag` |
 | `error` | Something failed mid-turn |
 
 `reasoning` is separate because llama-server emits it as a non-standard

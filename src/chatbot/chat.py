@@ -56,6 +56,12 @@ class Chat:
         #: the API response and the logs. Callers should read it only after a
         #: send() or a finished stream().
         self.last_source = ""
+        #: The knowledge-base tag behind the most recent reply, or "" when the
+        #: LLM wrote it. It goes out with the reply so the voice path can hand
+        #: it to the TTS service, which caches a tagged answer and declines to
+        #: cache anything else -- an LLM answer is new wording every time, so
+        #: caching it would only evict the canned answers that do repeat.
+        self.last_tag = ""
 
     @staticmethod
     def new_history() -> List[dict]:
@@ -160,6 +166,7 @@ class Chat:
         self.history.append({"role": "user", "content": message})
         self.history.append({"role": "assistant", "content": reply.text})
         self.last_source = "smart"
+        self.last_tag = reply.tag
         return reply.text
 
     def _decline_smart(self, reply: SmartReply | None) -> None:
@@ -212,6 +219,7 @@ class Chat:
         self._decline_smart(smart)
         self.history.append({"role": "user", "content": message})
         self.last_source = "llm"
+        self.last_tag = ""
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
@@ -300,12 +308,18 @@ class Chat:
             # browser renders it the same way it renders a streamed one.
             yield {"type": "token", "text": reply_text}
             await self.save()
-            yield {"type": "done", "reply": reply_text, "source": "smart"}
+            yield {
+                "type": "done",
+                "reply": reply_text,
+                "source": "smart",
+                "tag": self.last_tag,
+            }
             return
 
         self._decline_smart(smart)
         self.history.append({"role": "user", "content": message})
         self.last_source = "llm"
+        self.last_tag = ""
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
@@ -436,4 +450,4 @@ class Chat:
             yield {"type": "token", "text": reply_text}
 
         await self.save()
-        yield {"type": "done", "reply": reply_text, "source": "llm"}
+        yield {"type": "done", "reply": reply_text, "source": "llm", "tag": ""}

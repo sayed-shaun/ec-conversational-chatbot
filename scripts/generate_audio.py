@@ -132,14 +132,28 @@ async def render_one(
     return tag, "done", len(audio)
 
 
-async def warm_one(text: str, args, sem: asyncio.Semaphore) -> Tuple[str, str, int]:
-    """Ask the service to say one text, so its cache holds the result.
+async def warm_one(
+    tag: str, text: str, args, sem: asyncio.Semaphore
+) -> Tuple[str, str, int]:
+    """Ask the service to say one answer, so its cache holds the result.
 
     The audio is read and dropped: this exists for the entry it leaves behind.
     x-cache tells us whether the service had it already, which is what makes a
     re-run legible -- a second pass should be all HITs.
+
+    The tag goes with it, because the service caches a tagged reply and
+    declines to cache an untagged one. It is also why this walks tags rather
+    than distinct texts: if the service keys on the tag, every tag needs its
+    own call, and if it keys on the text, the tags that share an answer come
+    back as instant hits costing a round trip and no synthesis. Sending per
+    tag is correct either way.
     """
-    payload = {"input": text, "voice": args.voice, "response_format": "wav"}
+    payload = {
+        "input": text,
+        "voice": args.voice,
+        "response_format": "wav",
+        "tag": tag,
+    }
     async with sem:
         try:
             async with httpx.AsyncClient(timeout=args.timeout) as client:
@@ -148,9 +162,9 @@ async def warm_one(text: str, args, sem: asyncio.Semaphore) -> Tuple[str, str, i
                 )
                 resp.raise_for_status()
                 status = "hit" if resp.headers.get("x-cache") == "HIT" else "warmed"
-                return text, status, len(resp.content)
+                return tag, status, len(resp.content)
         except Exception as exc:  # noqa: BLE001 - one bad entry must not end the run
-            return text, f"error: {type(exc).__name__}: {exc}"[:120], 0
+            return tag, f"error: {type(exc).__name__}: {exc}"[:120], 0
 
 
 async def main() -> int:
@@ -242,15 +256,15 @@ async def main() -> int:
 
 
 async def _warm(texts: Dict[str, str], args) -> int:
-    """Ask the service to say every distinct answer once.
+    """Ask the service to say every tag's answer once.
 
-    Distinct is the point: the dataset repeats itself heavily -- many tags
-    share a byte-identical answer -- and the service keys its cache on the
-    text, so sending the duplicates would be several hundred pointless
-    synthesis requests against a production box.
+    Per tag rather than per distinct answer, because the tag is what the
+    service caches under. The dataset repeats itself heavily -- 1379 tags
+    share 892 answers -- so the duplicates cost a round trip and a cache hit
+    rather than a synthesis, which is cheap enough to be worth the certainty.
     """
-    distinct = sorted(set(texts.values()))
-    print(f"warming   : {len(distinct)} distinct answers from {len(texts)} tags")
+    distinct = len(set(texts.values()))
+    print(f"warming   : {len(texts)} tags ({distinct} distinct answers)")
     print(f"service   : {settings.ASR_TTS_URL}")
     print(f"voice     : {args.voice}   concurrency={args.concurrency}\n")
 
@@ -258,7 +272,10 @@ async def _warm(texts: Dict[str, str], args) -> int:
     started = time.perf_counter()
     warmed = hits = failed = 0
 
-    tasks = [asyncio.create_task(warm_one(t, args, sem)) for t in distinct]
+    tasks = [
+        asyncio.create_task(warm_one(tag, text, args, sem))
+        for tag, text in sorted(texts.items())
+    ]
     for n, task in enumerate(asyncio.as_completed(tasks), 1):
         _, status, _ = await task
         if status == "warmed":

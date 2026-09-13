@@ -1,6 +1,11 @@
 /*
  * Text to speech: streaming playback, and the buffered fallback.
  *
+ * Both calls carry the answer's knowledge-base `tag` when it has one. The TTS
+ * service caches a tagged reply and declines to cache an untagged one: a
+ * canned answer is read to every citizen who asks, while an LLM answer is new
+ * wording each time and would only evict the ones that repeat.
+ *
  * The reply is sent as written. Making it speakable -- markdown out, digits
  * into Bangla words, initialisms respelled -- happens in the /tts route
  * (src/chatbot/transform.py), so every caller gets it, not just this page.
@@ -107,6 +112,7 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
       input: text,
       voice: 'Aditi',
       stream: true,
+      tag: (meta && meta.tag) || '',
       turn_id: (meta && meta.turnId) || null,
       session_id: (meta && meta.sessionId) || null,
     }),
@@ -161,6 +167,7 @@ export async function synthesizeSpeech(text, meta) {
       input: text,
       voice: 'Aditi',
       response_format: 'wav',
+      tag: (meta && meta.tag) || '',
       turn_id: (meta && meta.turnId) || null,
       session_id: (meta && meta.sessionId) || null,
     }),
