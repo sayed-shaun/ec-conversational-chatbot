@@ -6,8 +6,10 @@ had nowhere to be tested.
 
 One stage per module, in the order the pipeline applies them:
 
+    layout       line breaks and item numbers become pauses
     markup       markdown out, so asterisks are not read aloud
     addresses    URLs said as names, paths dropped
+    codes        postcodes spelt out, before digits look like quantities
     numbers      digits read as quantities, dictation or ordinals
     latin        English rendered, spelt, or removed
     punctuation  what is left of the marks a voice can say
@@ -39,10 +41,14 @@ from src.speech.transform.latin import (
     LATIN_LETTER_BN,
     SPOKEN_LATIN,
     SPOKEN_TERMS,
+    codes_for_speech,
     latin_for_speech,
+    spell_code,
     spell_latin,
     spoken_latin,
+    strip_abbrev_dots,
 )
+from src.speech.transform.layout import layout_for_speech
 from src.speech.transform.markup import strip_markdown
 from src.speech.transform.numbers import (
     BN_DIGITS,
@@ -62,11 +68,15 @@ __all__ = [
     "for_speech",
     "addresses_for_speech",
     "dedupe_site_noun",
+    "codes_for_speech",
+    "layout_for_speech",
+    "strip_abbrev_dots",
     "latin_for_speech",
     "numbers_for_speech",
     "punctuation_for_speech",
     "spoken_latin",
     "spell_latin",
+    "spell_code",
     "strip_markdown",
     "collapse_space",
     "has_bengali",
@@ -92,10 +102,15 @@ __all__ = [
 def for_speech(text: str) -> str:
     """The whole pipeline: reply text in, something speakable out.
 
-    Order matters. Markdown goes first so later stages see plain prose.
+    Order matters. Layout goes first, because it is the only stage that can
+    still see the line breaks -- strip_markdown collapses them, and by then
+    the structure they carried is gone. Markdown next, so later stages see
+    plain prose.
     Addresses next, while their Latin is still structured enough to recognise
-    as a host rather than as words. Numbers before the Latin rules, because a
-    helpline label is Bengali and the number beside it is not. Then the Latin
+    as a host rather than as words. Codes after them and before numbers, since
+    a postcode's digits are not a quantity and the number stage cannot tell.
+    Numbers before the Latin rules, because a helpline label is Bengali and
+    the number beside it is not. Then the Latin
     stages, most accurate first: the known-term table, then letter-by-letter
     spelling, then removal. Punctuation last, because every stage above emits
     commas and daṛis of its own.
@@ -112,8 +127,11 @@ def for_speech(text: str) -> str:
     is_bengali = has_bengali(text)
 
     out = split_nukta(text)
+    out = layout_for_speech(out)
     out = strip_markdown(out)
+    out = strip_abbrev_dots(out)
     out = addresses_for_speech(out)
+    out = codes_for_speech(out)
     out = numbers_for_speech(out, bengali=is_bengali)
     if is_bengali:
         out = spoken_latin(out)

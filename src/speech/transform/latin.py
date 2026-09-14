@@ -16,6 +16,8 @@ where "এনআইডি" is the word in use.
 import re
 
 from src.speech.transform.common import SENTENCE_SPLIT, has_bengali
+from src.speech.transform.numbers import BN_TWO_DIGIT
+from src.speech.transform.translit import transliterate
 
 SPOKEN_TERMS = {
     "Smart Election Management BD": "স্মার্ট ইলেকশন ম্যানেজমেন্ট বিডি",
@@ -232,6 +234,84 @@ SPOKEN_TERMS.update(
     }
 )
 
+# Everything below closes the gaps an audit of all 1379 answers turned up:
+# tokens that reached the voice as nothing at all, or as spelt letters where a
+# word exists. They matter more now than they did, because the reply is read
+# down a phone line where there is no screen to fall back on.
+#
+# "No" is the address abbreviation, not the English "no" -- it is never the
+# latter anywhere in the knowledge base. "Act No" is listed as a phrase so the
+# legal citations read "আইন নম্বর", while a bare "ACT" stays the Australian
+# territory and is spelt, which is what an address wants.
+SPOKEN_TERMS.update(
+    {
+        # Address abbreviations. Left without their trailing dots: the
+        # patterns are \b-anchored, and a \b will not follow a full stop.
+        "Miami hosts foreign country consulates and a US Department of State "
+        "Office of Foreign Missions": "মায়ামিতে বিদেশি কনস্যুলেট এবং "
+        "যুক্তরাষ্ট্রের পররাষ্ট্র দপ্তরের অফিস অব ফরেন মিশনস",
+        # English function words carry nothing into a Bengali sentence, and
+        # now that the fallback spells rather than deletes, leaving them out
+        # has to be said explicitly -- otherwise "The Embassy of Bangladesh"
+        # opens with a spelt-out "থে".
+        "the": "",
+        "of": "",
+        "and": "",
+        "in": "",
+        "at": "",
+        "for": "",
+        "a": "",
+        "an": "",
+        "Act No": "আইন নম্বর",
+        "PO Box": "পোস্ট অফিস বক্স",
+        "PO": "পি ও",
+        "No": "নম্বর",
+        "St": "স্ট্রিট",
+        "Ln": "লেন",
+        "Rd": "রোড",
+        "Blvd": "বুলেভার্ড",
+        "Apt": "অ্যাপার্টমেন্ট",
+        # Countries and regions written as initials.
+        "USA": "ইউএসএ",
+        "NSW": "নিউ সাউথ ওয়েলস",
+        "DC": "ডিসি",
+        "Diplomatic": "ডিপ্লোম্যাটিক",
+        "foreign": "বিদেশি",
+        "NW": "নর্থ ওয়েস্ট",
+        "FL": "ফ্লোরিডা",
+        "CA": "ক্যালিফোর্নিয়া",
+        "ON": "অন্টারিও",
+        # Initialisms with an established spoken shape.
+        "AFIS": "এএফআইএস",
+        "NIDFN": "এনআইডিএফএন",
+        "MPO": "এমপিও",
+        "FAQ": "এফএকিউ",
+        "OFM": "ওএফএম",
+        "HQ": "এইচকিউ",
+        "ecs": "ইসিএস",
+        # Roman numerals, which spell as letters otherwise.
+        "XIX": "ঊনিশ",
+        "II": "দুই",
+        # Place names from the overseas mission addresses.
+        "Al-Sadu": "আল সাদু",
+        "Al-Nazlah": "আল নাজলাহ",
+        "Al-Sharqiyah": "আল শারকিয়াহ",
+        "Al Khalil": "আল খলিল",
+        "dell'Antartide": "দেল আন্তার্তিদে",
+        "O'Malley": "ও ম্যালি",
+        "Atria": "অ্যাট্রিয়া",
+        "Miami": "মায়ামি",
+        "Deira": "দেইরা",
+        "Dubai": "দুবাই",
+        # Ordinary words that were being dropped mid-sentence.
+        "password": "পাসওয়ার্ড",
+        "optional": "ঐচ্ছিক",
+        "service": "সার্ভিস",
+        "name": "নেম",
+        "Act": "আইন",
+    }
+)
+
 SPOKEN_LATIN = [
     (
         re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE | re.ASCII),
@@ -246,7 +326,7 @@ LATIN_LETTER_BN = {
     "a": "এ", "b": "বি", "c": "সি", "d": "ডি", "e": "ই", "f": "এফ",
     "g": "জি", "h": "এইচ", "i": "আই", "j": "জে", "k": "কে", "l": "এল",
     "m": "এম", "n": "এন", "o": "ও", "p": "পি", "q": "কিউ", "r": "আর",
-    "s": "এস", "t": "টি", "u": "ইউ", "v": "ভি", "w": "ডাব্লিউ",
+    "s": "এস", "t": "টি", "u": "ইউ", "v": "ভি", "w": "ডব্লিউ",
     "x": "এক্স", "y": "ওয়াই", "z": "জেড",
 }
 
@@ -255,6 +335,57 @@ def spell_latin(token: str) -> str:
     """Say a Latin run one letter at a time, the way a Bangla speaker reads an
     unfamiliar initialism aloud."""
     return " ".join(LATIN_LETTER_BN[c] for c in token.lower() if c in LATIN_LETTER_BN)
+
+# "Plot No. 5" ends a sentence as far as any splitter is concerned, and that
+# is the damage: the address is cut in two, and the tail -- still mostly Latin
+# at that point -- is then dropped whole by the rule below. The citizen is read
+# half a street address and no city. So the dot is taken off the handful of
+# abbreviations that carry one, before sentence splitting ever happens.
+_ABBREV_DOT = re.compile(
+    r"\b(No|St|Rd|Ln|Ave|Blvd|Apt|Mr|Mrs|Ms|Dr|Jr|Sr|vs|etc)\.", re.ASCII
+)
+
+
+# "P.O.", "U.S.A." and "D.C." are the same problem wearing dots inside as well
+# as at the end. Collapsed to bare initialisms here, they reach the table below
+# as "PO", "USA" and "DC" and are spoken; left alone, each interior dot was one
+# more false sentence end, and "P.O. No. 8" was read as a lone ". নম্বর আট".
+_DOTTED_INITIALS = re.compile(r"\b(?:[A-Za-z]\.){2,}", re.ASCII)
+
+
+def strip_abbrev_dots(text: str) -> str:
+    """Drop full stops that abbreviate rather than end a sentence."""
+    out = _DOTTED_INITIALS.sub(lambda m: m.group(0).replace(".", ""), text)
+    return _ABBREV_DOT.sub(r"\1", out)
+
+
+# A postcode is neither a word nor a quantity, and reading it as either
+# destroys it. "SW7 5JA" met the number stage first, which turned 7 and 5 into
+# quantities and left "এস ডব্লিউসাত পাঁচজে এ" -- the letters welded onto the
+# digits and the grouping gone. Canada's "K1R 7S8" came out "এক সাতআট", having
+# lost three letters outright.
+#
+# So a run that mixes capitals and digits is spelt character by character
+# before anything else can claim it: letters as letters, digits as digits,
+# spaced so a listener can write them down. Requiring both a capital and a
+# digit is what keeps it off plain numbers ("2606") and plain initialisms
+# ("XMM"), which the stages below already handle.
+_ALNUM_CODE = re.compile(r"\b(?=[A-Z\d]*[A-Z])(?=[A-Z\d]*\d)[A-Z\d]{2,8}\b", re.ASCII)
+
+
+def spell_code(token: str) -> str:
+    """Say a postcode-like run one character at a time."""
+    return " ".join(
+        BN_TWO_DIGIT[int(c)] if c.isdigit() else LATIN_LETTER_BN[c.lower()]
+        for c in token
+        if c.isdigit() or c.lower() in LATIN_LETTER_BN
+    )
+
+
+def codes_for_speech(text: str) -> str:
+    """Spell out postcodes and similar letter-and-digit runs."""
+    return _ALNUM_CODE.sub(lambda m: spell_code(m.group(0)), text)
+
 
 def spoken_latin(text: str) -> str:
     if not has_bengali(text):
@@ -295,22 +426,28 @@ def _foreign_share(sentence: str) -> float:
 
 
 def latin_for_speech(text: str) -> str:
-    """Spell initialisms and remove the English a Bangla voice cannot say.
+    """Spell initialisms and write every remaining English word in Bengali.
 
     The caller decides this is a Bengali reply; an English answer to an
     English question keeps its English.
 
-    A sentence still more than _SENTENCE_LATIN_LIMIT Latin after spelling
-    is dropped whole rather than stripped. Removing the English from an
-    overseas address leaves a fragment that reads as an answer without
-    being one; a listener who needs the address has it on screen.
+    Nothing English is dropped any more. This used to spell the initialisms,
+    delete every other Latin word, and throw away whole sentences that were
+    still more than _SENTENCE_LATIN_LIMIT Latin afterwards -- on the grounds
+    that half an overseas address reads as an answer without being one, and
+    a listener who needed it had it on screen. Read down a phone line there
+    is no screen, and deletion is the one outcome a caller cannot recover
+    from: they never learn a word was missing. So the remainder is spelt in
+    Bengali letters instead, and the sentence is kept.
+
+    Script that is neither Latin nor Bengali is still removed. An Arabic run
+    dropped into a Bengali reply has no Bengali spelling to give it, and
+    transliterating it would mean inventing one.
     """
-    kept = []
+    out = []
     for sentence in SENTENCE_SPLIT.split(text):
         if not sentence:
             continue
         spelled = _ACRONYM.sub(lambda m: spell_latin(m.group(0)), sentence)
-        if _foreign_share(spelled) >= _SENTENCE_LATIN_LIMIT:
-            continue
-        kept.append(_FOREIGN_RUN.sub("", _LATIN_RUN.sub("", spelled)))
-    return "".join(kept)
+        out.append(_FOREIGN_RUN.sub("", transliterate(spelled)))
+    return "".join(out)
