@@ -22,6 +22,7 @@ from typing import Any, FrozenSet, Iterable, Optional
 
 import httpx
 
+from src.chatbot.sanitize import press_zero_for_agent, strip_canned_closer
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
@@ -144,7 +145,9 @@ class SmartBotClient:
         is for.
         """
         return SmartReply(
-            text=str(data.get("response") or ""),
+            text=press_zero_for_agent(
+                strip_canned_closer(str(data.get("response") or ""))
+            ),
             tag=str(data.get("response_tag") or ""),
             probability=_as_float(data.get("probability")),
             source=str(data.get("prediction_source") or ""),
