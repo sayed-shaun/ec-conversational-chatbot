@@ -16,11 +16,12 @@ import { API_BASE } from './config.js';
  *
  * So the padding is cut here, between recording and upload: decode the
  * clip, keep only the parts that are actually speech, and re-encode
- * those as 16 kHz mono WAV -- the rate and format acoustic models
- * expect, which also drops the Opus round trip and shrinks the upload.
+ * those as 8 kHz mono WAV -- the rate and format the ASR service is
+ * being tested at, which also drops the Opus round trip and shrinks the
+ * upload.
  */
 
-const ASR_SAMPLE_RATE = 16000;
+const ASR_SAMPLE_RATE = 8000;
 
 // One lazily-created context, reused for every decode. Browsers cap how
 // many AudioContexts may exist at once (Chrome allows about six), and
@@ -140,8 +141,8 @@ function downsample(samples, from, to) {
   const outLen = Math.floor(samples.length / ratio);
   const out = new Float32Array(outLen);
   // Average each output sample's whole input span instead of point-sampling
-  // it. Dropping 48 kHz to 16 kHz by picking every third sample folds
-  // everything above 8 kHz back down as aliasing noise -- squarely into the
+  // it. Dropping 48 kHz to 8 kHz by picking every sixth sample folds
+  // everything above 4 kHz back down as aliasing noise -- squarely into the
   // band the model is listening to.
   for (let i = 0; i < outLen; i++) {
     const start = Math.floor(i * ratio);
@@ -151,6 +152,105 @@ function downsample(samples, from, to) {
     out[i] = end > start ? sum / (end - start) : 0;
   }
   return { samples: out, sampleRate: to };
+}
+
+/*
+ * Everything below reproduces what a voice actually loses on its way down a
+ * phone line, because that is the audio this bot answers in production: a
+ * citizen on 105, not a laptop microphone. 8 kHz alone is nowhere near it --
+ * a clean 8 kHz capture is still markedly easier to transcribe than a call,
+ * so tuning the ASR against one flatters it and the accuracy drops the day
+ * it meets a real handset. The two stages here are the rest of the path.
+ */
+
+/*
+ * One biquad, direct form I. Coefficients are already normalised by a0.
+ */
+function biquad(samples, b0, b1, b2, a1, a2) {
+  const out = new Float32Array(samples.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const x = samples[i];
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+    out[i] = y;
+  }
+  return out;
+}
+
+function highPass(samples, rate, cutoff) {
+  const w0 = 2 * Math.PI * cutoff / rate;
+  const cos = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * Math.SQRT1_2);   // Butterworth, Q = 0.707
+  const a0 = 1 + alpha;
+  return biquad(
+    samples,
+    ((1 + cos) / 2) / a0, (-(1 + cos)) / a0, ((1 + cos) / 2) / a0,
+    (-2 * cos) / a0, (1 - alpha) / a0,
+  );
+}
+
+function lowPass(samples, rate, cutoff) {
+  const w0 = 2 * Math.PI * cutoff / rate;
+  const cos = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * Math.SQRT1_2);
+  const a0 = 1 + alpha;
+  return biquad(
+    samples,
+    ((1 - cos) / 2) / a0, (1 - cos) / a0, ((1 - cos) / 2) / a0,
+    (-2 * cos) / a0, (1 - alpha) / a0,
+  );
+}
+
+/*
+ * The passband a phone line gives you: 300 Hz to 3400 Hz. The low cut takes
+ * the chest resonance out of a voice; the high cut is what blunts Bengali
+ * sibilants -- শ, স and ছ live largely above 3.4 kHz, and on a call the ASR
+ * simply never receives them. Two cascaded second-order sections, so the
+ * skirts roll off rather than cliff, as a real line does.
+ */
+function bandLimit(samples, rate) {
+  return lowPass(highPass(samples, rate, 300), rate, 3400);
+}
+
+/*
+ * G.711 mu-law: the codec on the wire. It is 8-bit, but logarithmically
+ * spaced, so quiet passages keep their resolution and loud ones lose it --
+ * about 38 dB SNR across the range where linear 8-bit would give 48 dB only
+ * at full scale and far less everywhere else.
+ *
+ * We compand and immediately expand rather than shipping mu-law bytes: the
+ * quantisation loss is the part that matters to the model, and undoing the
+ * encoding leaves us a plain 16-bit WAV that any ASR endpoint accepts. A
+ * mu-law WAV (format 7) would be the real wire format but not every service
+ * decodes it, and none of the loss would differ.
+ */
+function ulawEncode(sample) {
+  const BIAS = 0x84, CLIP = 32635;
+  let s = Math.round(Math.max(-1, Math.min(1, sample)) * 32767);
+  const sign = s < 0 ? 0x80 : 0;
+  if (s < 0) s = -s;
+  if (s > CLIP) s = CLIP;
+  s += BIAS;
+  let exponent = 7;
+  for (let mask = 0x4000; (s & mask) === 0 && exponent > 0; exponent--, mask >>= 1);
+  const mantissa = (s >> (exponent + 3)) & 0x0F;
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF;
+}
+
+function ulawDecode(byte) {
+  const u = ~byte & 0xFF;
+  const exponent = (u >> 4) & 0x07;
+  const mantissa = u & 0x0F;
+  const magnitude = (((mantissa << 3) + 0x84) << exponent) - 0x84;
+  return (u & 0x80 ? -magnitude : magnitude) / 32768;
+}
+
+function compand(samples) {
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) out[i] = ulawDecode(ulawEncode(samples[i]));
+  return out;
 }
 
 function encodeWav(samples, sampleRate) {
@@ -179,13 +279,21 @@ function encodeWav(samples, sampleRate) {
   return new Blob([view.buffer], { type: 'audio/wav' });
 }
 
-// Returns a trimmed 16 kHz mono WAV, or null if the clip held no speech.
+/*
+ * Returns a trimmed 8 kHz mono WAV carrying the same losses a phone call
+ * would have inflicted, or null if the clip held no speech.
+ *
+ * The order is the order the wire imposes it: trim, drop to 8 kHz, band-limit
+ * to the line's 300-3400 Hz, then compand through mu-law. Filtering after
+ * companding would smooth the quantisation noise back out and hand the model
+ * a cleaner signal than a call ever delivers.
+ */
 export async function prepareForAsr(blob) {
   const decoded = await decodeToMono(blob);
   const speech = extractSpeech(decoded.samples, decoded.sampleRate);
   if (!speech || !speech.length) return null;
   const out = downsample(speech, decoded.sampleRate, ASR_SAMPLE_RATE);
-  return encodeWav(out.samples, out.sampleRate);
+  return encodeWav(compand(bandLimit(out.samples, out.sampleRate)), out.sampleRate);
 }
 
 /*
