@@ -107,11 +107,12 @@ class ChatbotSettings(_Settings):
     LIST_OF_TAGS_WILL_GO_TO_LLM is the whole set of answers the LLM
     writes instead of the smart bot, as a JSON list. "unable_to_answer"
     is in it because that is the API saying it has none; the greeting
-    tags are in it because the dataset answers a greeting with one fixed
-    line, which reads as canned to someone who just said hello, and
-    nothing about small talk needs the verbatim guarantee the dataset
-    exists to provide. The list is exhaustive -- a tag removed from it is
-    served from the dataset again, including "unable_to_answer".
+    and farewell tags are in it because the dataset answers hello and
+    goodbye with one fixed line each, which reads as canned to someone
+    making small talk, and nothing about small talk needs the verbatim
+    guarantee the dataset exists to provide. The list is exhaustive -- a
+    tag removed from it is served from the dataset again, including
+    "unable_to_answer".
     """
 
     model_config = _BASE_CONFIG
@@ -126,7 +127,7 @@ class ChatbotSettings(_Settings):
     SMART_BOT_TIMEOUT: float = Field(default=60.0)
     SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=True)
     LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
-        default=["greetings", "salam_dao", "unable_to_answer"]
+        default=["greetings", "salam_dao", "goodbye", "unable_to_answer"]
     )
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)

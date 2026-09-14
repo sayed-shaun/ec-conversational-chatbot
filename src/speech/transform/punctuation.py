@@ -24,6 +24,12 @@ _DASH = re.compile(r"\s*[\u2013\u2014\u2015]+\s*")
 
 _UNSPEAKABLE = re.compile(r"[()\[\]{}\"'“”‘’:;|<>+=*_~^\\@#$%&]")
 
+# A full stop inside a web address is already "ডট" by the time it reaches
+# here, put there by the addresses stage. Every other dot -- a list marker
+# ("এক. প্রথম ধাপ"), a decimal, the dots in "পি.এস.সি" -- is left exactly as
+# it was. They sit in answers that contain no English at all, and rewriting
+# them is not what this module was opened up to do.
+
 
 def punctuation_for_speech(text: str) -> str:
     text = _SLASH_BETWEEN_WORDS.sub(" বা ", text)

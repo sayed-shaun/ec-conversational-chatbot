@@ -150,6 +150,107 @@ def strip_protocol(text: str) -> str:
     return "\n".join(kept).strip()
 
 
+# The dataset closes a great many answers with a stock offer of further help.
+# Read once it is courteous; read after every single answer it is the reason a
+# conversation cannot end, and it is what makes a canned reply sound canned --
+# the citizen answers the question they were just asked, gets the same question
+# back, and the exchange loops. The information is in the sentence before it;
+# this one carries none.
+#
+# Anchored to the end of the answer, which is the only place it appears, but
+# not to a preceding daṛi: the entry the citizen actually saw ran the closer
+# straight on from a URL -- "...ঠিকানা হলো services.nidw.gov.bd/ আপনাকে আর
+# কোন..." -- with no sentence terminator anywhere before it. Requiring one
+# matched nothing in exactly the case that prompted this.
+#
+# The wording varies across entries -- কি/কী, "আর কোন" against "আর কিছু" --
+# so the parts that move are optional rather than spelt out as separate
+# patterns.
+_CANNED_CLOSER = re.compile(
+    r"(?:^|(?<=\s)|(?<=[।.!?]))\s*"
+    r"আপনাকে\s+আর\s+(?:কি\s+|কী\s+)?(?:কোন|কোনো|কিছু)\s+"
+    r"(?:তথ্য|বিষয়ে)\s+(?:দিয়ে\s+)?সহযোগিতা\s+করতে\s+পারি\s*[?।]?\s*$"
+)
+
+
+def strip_canned_closer(text: str) -> str:
+    """Drop the stock "can I help you with anything else" tail.
+
+    Returns the text unchanged when the phrase is the whole of it: an answer
+    that is only the closer still has to say something.
+    """
+    if not text:
+        return text or ""
+    stripped = _CANNED_CLOSER.sub("", text).strip()
+    return stripped or text.strip()
+
+
+# The knowledge base sends a caller who cannot be helped to the 105 helpline.
+# That was the right advice while the reply was read in a browser. Reached
+# over the phone it is absurd: the citizen is already on a call, and being
+# told to place another one is a dead end -- so the same instruction becomes
+# "press 0", which transfers them to a person without hanging up.
+#
+# Bengali inflects the verb, so the ending is carried across rather than
+# replaced wholesale: "কল করে" is a participle and becomes "চেপে", while
+# "কল করুন" is an imperative and becomes "চাপুন". Substituting one form
+# everywhere would leave half the corpus ungrammatical.
+_PRESS = {
+    "ুন": "চাপুন",
+    "ে": "চেপে",
+    "েও": "চেপেও",
+    "ার": "চাপার",
+    "তে": "চাপতে",
+}
+
+# The digit is left as "০" rather than written "শূন্য": on screen it is the
+# key to press, and the number stage reads it aloud as শূন্য anyway.
+_ZERO = "০"
+
+# Ordered, most specific first. The first pattern carries the helpline's name
+# with it -- "নির্বাচন কমিশনের হেল্পলাইন ১০৫ নম্বরে কল করুন" -- because
+# replacing only the number leaves "হেল্পলাইন ০ চাপুন", which names a
+# helpline and then tells the caller to press a key on it.
+# The corpus spells the particle after the number every way it can -- "১০৫-এ",
+# "১০৫ নম্বরে", "১০৫ নাম্বারে", "১০৫ এর", and once "১০৫ নম্বরে এ" -- so it is
+# written once here rather than three times below.
+#
+# Whatever follows must be an instruction to call: কল, ফোন or যোগাযোগ. That
+# requirement is what leaves "আপনার মোবাইলে ১০৫ থেকে এসএমএস পাবেন" alone,
+# where 105 is the sender of a message and not a number to ring.
+_PARTICLE = r"(?:-\s*)?(?:এর|এ|তে|নম্বরে|নাম্বারে|নম্বর|নাম্বার)?\s*(?:এ\s*)?"
+
+_HELPLINE_105 = [
+    re.compile(
+        r"(?:বাংলাদেশ\s*)?(?:নির্বাচন\s*)?(?:কমিশনে?র?\s*)?(?:আমাদের\s*)?(?:ফ্রি\s*)?"
+        r"(?:হেল্পলাইন|কল\s*সেন্টার|কলসেন্টার)\s*-?\s*১০৫\s*" + _PARTICLE
+        + r"(?:কল|ফোন|যোগাযোগ)\s*কর(ুন|েও|ে|ার|তে)"
+    ),
+    re.compile(r"(?:কল|ফোন)\s*কর(ুন|েও|ে|ার|তে)\s*১০৫\s*(?:নম্বরে|নাম্বারে|এ|তে)?"),
+    re.compile(r"১০৫\s*" + _PARTICLE + r"(?:কল|ফোন|যোগাযোগ)\s*কর(ুন|েও|ে|ার|তে)"),
+]
+
+_AGENT_PHRASE = "সরাসরি আমাদের প্রতিনিধির সাথে কথা বলতে "
+
+
+def press_zero_for_agent(text: str) -> str:
+    """Turn "call 105" into "press 0", which is what a caller can act on."""
+    if not text or "১০৫" not in text:
+        return text or ""
+
+    out = text
+    for index, pattern in enumerate(_HELPLINE_105):
+        def swap(m: "re.Match") -> str:
+            press = _PRESS.get(m.group(1), "চাপুন")
+            # Only the named-helpline form needs the clause rebuilt; the
+            # others already sit in a sentence that says who is being reached.
+            lead = _AGENT_PHRASE if index == 0 else ""
+            return f"{lead}{_ZERO} {press}"
+
+        out = pattern.sub(swap, out)
+    return out
+
+
 def mentions_tool(text: str) -> bool:
     """True if `text` names one of the tools."""
     return bool(_TOOL_MENTION.search(text or ""))
@@ -158,10 +259,16 @@ def mentions_tool(text: str) -> bool:
 def scrub(text: str) -> str:
     """Drop every sentence that names a tool, leaving the rest untouched.
 
+    "Call 105" becomes "press 0" here as well as on the dataset path: the
+    prompt tells the model to offer the helpline, and a model does not follow
+    a prompt reliably enough for that to be the only place it is handled.
+
     Returns "" if that removes everything -- the caller decides what to say
     instead, since an empty reply is never the right thing to show.
     """
-    text = normalize_nid(strip_foreign_script(strip_protocol(text)))
+    text = press_zero_for_agent(
+        normalize_nid(strip_foreign_script(strip_protocol(text)))
+    )
     if not text or not mentions_tool(text):
         return text or ""
 

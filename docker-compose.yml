@@ -40,7 +40,7 @@ services:
       SMART_BOT_URL: ${SMART_BOT_URL:-}
       SMART_BOT_TIMEOUT: ${SMART_BOT_TIMEOUT:-60.0}
       SMART_BOT_USE_LLM_SELECTOR: ${SMART_BOT_USE_LLM_SELECTOR:-true}
-      LIST_OF_TAGS_WILL_GO_TO_LLM: ${LIST_OF_TAGS_WILL_GO_TO_LLM:-["greetings", "salam_dao", "unable_to_answer"]}
+      LIST_OF_TAGS_WILL_GO_TO_LLM: ${LIST_OF_TAGS_WILL_GO_TO_LLM:-["greetings", "salam_dao", "goodbye", "unable_to_answer"]}
       ASR_TTS_URL: ${ASR_TTS_URL:-}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
       ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}

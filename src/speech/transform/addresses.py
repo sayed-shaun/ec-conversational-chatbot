@@ -4,10 +4,20 @@ A spoken address is only useful as far as the host: reading a path aloud
 gives a listener nothing they can act on, and the path is where Latin
 letters survive every other rule.
 
-SERVICE_SITE_BN names the one address in the knowledge base instead of
-spelling it out, which would be thirteen syllables of dictation. Only
-speech is affected; the on-screen reply keeps the real URL, as this
-module runs on the way to TTS and nowhere else.
+Every host is said label by label -- "সার্ভিসেস ডট এন আই ডি ডব্লিউ ডট গভ ডট
+বিডি" -- because the address is the answer. It used to be replaced by the
+name SERVICE_SITE_BN instead, on the grounds that spelling it out was
+thirteen syllables of dictation and the reader had the URL on screen
+anyway. Down a phone line there is no screen, and a caller told to visit
+"the NID service website" has been given nothing they can type. The
+syllables are the point.
+
+The path is still dropped: a spoken "/nid-pub/fees" helps nobody, and the
+host is as far as a listener can act on.
+
+SERVICE_SITE_BN is kept for dedupe_site_noun, which still tidies a reply
+that names the site in prose. Only speech is affected; the on-screen reply
+keeps the real URL, as this module runs on the way to TTS and nowhere else.
 """
 
 import re
@@ -17,8 +27,8 @@ from src.speech.transform.latin import spell_latin
 SERVICE_SITE_BN = "এনআইডি সেবার ওয়েবসাইট"
 
 DOMAIN_LABEL_BN = {
-    "www": "ডাব্লিউ ডাব্লিউ ডাব্লিউ",
-    "nidw": "এনআইডিডাব্লিউ",
+    "www": "ডব্লিউ ডব্লিউ ডব্লিউ",
+    "nidw": "এন আই ডি ডব্লিউ",
     "gov": "গভ",
     "bd": "বিডি",
     "com": "কম",
@@ -26,6 +36,7 @@ DOMAIN_LABEL_BN = {
     "net": "নেট",
     "info": "ইনফো",
     "services": "সার্ভিসেস",
+    "ecs": "ইসিএস",
 }
 
 _URL = re.compile(
@@ -43,16 +54,23 @@ _DOMAIN = re.compile(r"\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+\b", re.ASCII)
 # by one and left the voice saying only the last of them.
 #
 # The repair is deliberately narrow, because a dot followed by a space is also
-# what the end of a sentence looks like. All labels must be lowercase ASCII,
+# what the end of a sentence looks like. All labels must be ASCII letters,
 # there must be at least two separators, and the last label must be a TLD from
 # this list -- anchoring on a real TLD is what keeps "e.g. this and that" and
 # "the fee. then. wait" from being welded into a hostname. A host ending in
 # some other TLD is simply left as it was, which is the behaviour before this
 # repair existed.
+#
+# Case-insensitive, like _URL and _KNOWN_DOMAIN. Matching only lowercase was
+# the same bug one level down: a model starting a sentence with "Services." or
+# writing the acronym as "NIDW" left the host unjoined, and the Latin stage
+# then spelt "NIDW" out letter by letter, dropped "Services" and "Gov" as
+# unknown words, and sent a stray "." to the voice -- which is precisely the
+# mangling this repair exists to prevent.
 _TLDS = "bd|com|org|net|gov|edu|info|io|co"
 _SPACED_DOMAIN = re.compile(
     r"\b[a-z][a-z0-9-]*(?:\s*\.\s*[a-z][a-z0-9-]*)+\s*\.\s*(?:" + _TLDS + r")\b",
-    re.ASCII,
+    re.ASCII | re.IGNORECASE,
 )
 
 
@@ -71,18 +89,16 @@ def _spoken_domain(match: re.Match) -> str:
 
 
 def addresses_for_speech(text: str) -> str:
-    """Strip paths, name the known site, break other hosts on their dots.
+    """Strip paths and break every host on its dots.
 
-    Unknown hosts have each label translated via DOMAIN_LABEL_BN or spelled
-    out, so a bare nidw.gov.bd is not left half in Latin for the voice to
-    trip over.
+    Each label is translated via DOMAIN_LABEL_BN or spelled out, so a host is
+    never left half in Latin for the voice to trip over.
 
     A host written with spaces around its dots is rejoined first, since every
     pattern here expects the labels joined.
     """
     out = _repair_spaced_domains(text)
     out = _URL.sub(lambda m: m.group(1), out)
-    out = _KNOWN_DOMAIN.sub(SERVICE_SITE_BN, out)
     return _DOMAIN.sub(_spoken_domain, out)
 
 

@@ -38,7 +38,8 @@ from src.mcp.data_fetch import TAG_ANSWERS, start_refresh_thread
 logger = get_logger(__name__)
 
 NOT_FOUND_ANSWER = (
-    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
+    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। "
+    "সরাসরি আমাদের প্রতিনিধির সাথে কথা বলতে ০ চাপুন।"
 )
 
 # Tags whose entry in tag_answer.json is a marker rather than an answer.
