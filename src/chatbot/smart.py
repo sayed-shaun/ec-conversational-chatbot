@@ -24,6 +24,7 @@ import httpx
 
 from src.chatbot.sanitize import (
     break_bracket_items,
+    hard_break_lines,
     press_zero_for_agent,
     strip_canned_closer,
 )
@@ -149,9 +150,11 @@ class SmartBotClient:
         is for.
         """
         return SmartReply(
-            text=break_bracket_items(
-                press_zero_for_agent(
-                    strip_canned_closer(str(data.get("response") or ""))
+            text=hard_break_lines(
+                break_bracket_items(
+                    press_zero_for_agent(
+                        strip_canned_closer(str(data.get("response") or ""))
+                    )
                 )
             ),
             tag=str(data.get("response_tag") or ""),
