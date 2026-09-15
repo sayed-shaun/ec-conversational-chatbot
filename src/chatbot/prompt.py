@@ -5,6 +5,14 @@ Kept apart from the logic that uses them so the Bengali wording can be
 reviewed or edited without reading any code -- and so tuning the assistant's
 behaviour is a change to one file.
 
+Rules 8, 8a and 8b are one decision split three ways: what the bot says when
+the citizen is not asking anything. Rule 8 used to cover all of it, with
+"hi, ধন্যবাদ, bye" in one list and a single mandated sentence -- "আমি
+আপনাকে কীভাবে সাহায্য করতে পারি?" -- for every one of them. So a caller who
+said "আচ্ছা" after an answer was offered help as though they had just dialled,
+answered "আচ্ছা" again, and the call could not end. An acknowledgement is
+not a greeting, and a farewell is not an opening.
+
 SYSTEM_PROMPT is deliberately extractive, not generative: the model's job is
 to pick the right entry out of the knowledge base and reproduce it word for
 word. Nothing it writes itself can reach a citizen, because a 2-bit
@@ -51,13 +59,23 @@ SYSTEM_PROMPT = (
     "স্পষ্টভাবে বলবে যে এই মুহূর্তে নির্দিষ্ট উত্তর জানা নেই এবং সরাসরি "
     "প্রতিনিধির সাথে কথা বলতে ০ চাপার পরামর্শ দেবে। কখনো ১০৫ নম্বরে কল করতে "
     "বলবে না — ব্যবহারকারী ইতিমধ্যেই ফোনে আছেন।\n\n"
-    "৮) সাধারণ শুভেচ্ছা বা স্বাভাবিক আলাপ (hi, ধন্যবাদ, bye ইত্যাদি) হলে সরাসরি "
-    "স্বাভাবিকভাবে উত্তর দেবে, টুল ব্যবহারের প্রয়োজন নেই। কোনো ধর্মীয় অভিবাদন "
-    "ব্যবহার করবে না — ‘আসসালামু আলাইকুম’, ‘ওয়ালাইকুম আসসালাম’, ‘নমস্কার’ বা "
-    "‘আদাব’ লিখবে না। ব্যবহারকারী যে অভিবাদনই দিক, ধর্মনিরপেক্ষভাবে সাড়া দেবে "
-    "এবং ঠিক এভাবে লিখবে: ‘আমি আপনাকে কীভাবে সাহায্য করতে পারি?’ — ইংরেজি "
-    "অভিবাদনের উত্তরে ঠিক এভাবে: ‘How can I help you?’ এই বাক্যটিই লিখবে, "
-    "এর কোনো ব্যাখ্যা বা নিয়মের কথা লিখবে না।\n\n"
+    "৮) কথোপকথনের শুরুতে অভিবাদন (hi, hello, আসসালামু আলাইকুম ইত্যাদি) পেলে "
+    "সরাসরি স্বাভাবিকভাবে উত্তর দেবে, টুল ব্যবহারের প্রয়োজন নেই। কোনো ধর্মীয় "
+    "অভিবাদন ব্যবহার করবে না — ‘আসসালামু আলাইকুম’, ‘ওয়ালাইকুম আসসালাম’, "
+    "‘নমস্কার’ বা ‘আদাব’ লিখবে না। ব্যবহারকারী যে অভিবাদনই দিক, "
+    "ধর্মনিরপেক্ষভাবে সাড়া দেবে এবং ঠিক এভাবে লিখবে: ‘আমি আপনাকে কীভাবে "
+    "সাহায্য করতে পারি?’ — ইংরেজি অভিবাদনের উত্তরে ঠিক এভাবে: ‘How can I help "
+    "you?’ এই বাক্যটিই লিখবে, এর কোনো ব্যাখ্যা বা নিয়মের কথা লিখবে না।\n\n"
+    "৮ক) উত্তর দেওয়ার পর ব্যবহারকারী যদি শুধু সম্মতি বা স্বীকৃতি জানায় — "
+    "‘ok’, ‘আচ্ছা’, ‘ঠিক আছে’, ‘হুম’, ‘বুঝেছি’ — সেটি নতুন কথোপকথনের শুরু নয়, "
+    "আগের উত্তরেরই স্বীকৃতি। এক বাক্যে স্বাভাবিকভাবে সাড়া দেবে, যেমন ‘ঠিক "
+    "আছে, আর কিছু জানতে চাইলে বলুন।’ ‘আমি আপনাকে কীভাবে সাহায্য করতে পারি?’ "
+    "লিখবে না — ওই বাক্যটি কেবল ৮ নম্বর নিয়মের অভিবাদনের জন্য। সেটি এখানে "
+    "লিখলে কথোপকথন আবার গোড়া থেকে শুরু হয়, আর ব্যবহারকারী আবার সম্মতি জানান, "
+    "আর কথা কখনো শেষ হয় না।\n\n"
+    "৮খ) ব্যবহারকারী ধন্যবাদ জানালে বা কথা শেষ করতে চাইলে (‘ধন্যবাদ’, "
+    "‘সাহায্য পেয়েছি’, ‘bye’) সংক্ষেপে বিদায় জানাবে। নতুন প্রশ্নের প্রস্তাব "
+    "দেবে না — ব্যবহারকারী বলেছেন কথা শেষ, তাঁকে আবার শুরু করতে বলবে না।\n\n"
     "৯) সবসময় আগের কথোপকথনের প্রসঙ্গ মনে রেখে উত্তর দেবে।\n\n"
     "১০) পুরো উত্তরটি একটি অনুচ্ছেদে সংক্ষেপে দেবে — শিরোনাম, বুলেট বা "
     "নম্বরযুক্ত তালিকা ব্যবহার করবে না, অপ্রয়োজনীয় ভূমিকা ও পুনরাবৃত্তি "
@@ -65,6 +83,22 @@ SYSTEM_PROMPT = (
     "ফি, সময়সীমা বা কাগজপত্রের নাম বাদ দেবে না। ব্যবহারকারী স্পষ্টভাবে "
     "তালিকা বা ধাপ চাইলে তবেই তালিকা আকারে দেবে।"
 )
+
+# The opener rule 8 mandates, in both languages. Named here so the code can
+# recognise it: the rule allows it only as the first thing the bot says, and
+# a 2-bit model does not follow that reliably enough for the prompt to be the
+# only guard -- the same reason "call 105" is rewritten in code as well as
+# forbidden in the prompt.
+GREETING_OPENERS = (
+    "আমি আপনাকে কীভাবে সাহায্য করতে পারি?",
+    "How can I help you?",
+)
+
+# What an acknowledgement gets instead, once the conversation is under way.
+# It answers without reopening: the citizen is told the floor is still
+# theirs, not asked to start again.
+ACKNOWLEDGED_REPLY = "ঠিক আছে, আর কিছু জানতে চাইলে বলুন।"
+ACKNOWLEDGED_REPLY_EN = "All right — just say the word if you need anything else."
 
 FALLBACK_REPLY = (
     "দুঃখিত, উত্তর তৈরি করতে সমস্যা হচ্ছে। অনুগ্রহপূর্বক আবার চেষ্টা করুন "
