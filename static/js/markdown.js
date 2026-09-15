@@ -30,6 +30,30 @@
  */
 const INLINE_LIST_ITEM = /(।)[ \t]+(?=(?:[0-9০-৯]+[.)]|[*\-•])[ \t])/g;
 
+/*
+ * The dataset writes its own lists a third way: a bracketed number, run
+ * inline, with no daṛi anywhere to break on.
+ *
+ *     নিজ নাম (বাংলা ও ইংরেজী) এর ক্ষেত্রেঃ (১) অনলাইন জন্ম সনদ (বাংলা ও
+ *     ইংরেজী) (২) শিক্ষাগত যোগ্যতা ... (৩) ড্রাইভিং লাইসেন্স (যদি থাকে)
+ *
+ * INLINE_LIST_ITEM cannot see it -- that anchors on a daṛi, and the marker
+ * here opens with a bracket rather than closing with one -- so the whole
+ * answer renders as a single wall of text and the citizen has to find the
+ * items by eye.
+ *
+ * Each item gets a hard break instead of becoming a real markdown list: the
+ * numbering is already in the text, and a list would print its own marker
+ * beside it -- "1. (১) অনলাইন জন্ম সনদ".
+ *
+ * Only one or two digits, which is what keeps this off a year: "(১৯৭২)" is
+ * four and never matches. The brackets must hold nothing but the number, so
+ * the parentheticals the corpus is full of -- "(বাংলা ও ইংরেজী)",
+ * "(ভ্যাটসহ)", "(যদি থাকে)" -- are untouched, and whitespace has to follow,
+ * or "(২)-এ" would break mid-word.
+ */
+const INLINE_BRACKET_ITEM = /[ \t]+(?=\([0-9০-৯]{1,2}\)[ \t]*\S)/g;
+
 const ORDERED = /^(\s*)([0-9০-৯]+)[.)]\s+(.*)$/;
 const BULLETED = /^(\s*)[-*+•]\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
@@ -142,6 +166,8 @@ export function renderMarkdown(source) {
   const lines = String(source == null ? '' : source)
     .replace(/\r\n/g, '\n')
     .replace(INLINE_LIST_ITEM, '$1\n')
+    // Two spaces, so the join below reads it as markdown's hard break.
+    .replace(INLINE_BRACKET_ITEM, '  \n')
     .split('\n');
 
   const html = [];
