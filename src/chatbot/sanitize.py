@@ -278,6 +278,31 @@ def press_zero_for_agent(text: str) -> str:
 _BRACKET_ITEM = re.compile(r"[ \t]+(?=\((?:[০-৯]{1,2}|[0-9]{1,2})\)[ \t]*\S)")
 
 
+# The corpus writes its own line breaks, and markdown eats them: a single
+# newline is whitespace there, so an answer the dataset laid out as
+#
+#     নিজ নাম (বাংলা ও ইংরেজী) এর ক্ষেত্রেঃ
+#     (১) অনলাইন জন্ম সনদ (বাংলা ও ইংরেজী)
+#     (২) শিক্ষাগত যোগ্যতা ...
+#
+# reaches the reader as one unbroken paragraph with the markers buried in
+# it. The layout was there all along; only the rendering lost it.
+#
+# Two trailing spaces is markdown's hard break, which is what makes the
+# newline survive. A blank line is left alone -- that is a paragraph break
+# and already renders as one. The speech path is unaffected either way: its
+# layout stage strips a line's trailing whitespace before it looks at what
+# the line ends with.
+_SOFT_BREAK = re.compile(r"(?<!\n)[ \t]*\n(?!\s*\n)")
+
+
+def hard_break_lines(text: str) -> str:
+    """Make the answer's own line breaks survive markdown."""
+    if not text:
+        return text or ""
+    return _SOFT_BREAK.sub("  \n", text)
+
+
 def break_bracket_items(text: str) -> str:
     """Put each inline "(১)" item on its own line."""
     if not text:
@@ -300,9 +325,11 @@ def scrub(text: str) -> str:
     Returns "" if that removes everything -- the caller decides what to say
     instead, since an empty reply is never the right thing to show.
     """
-    text = break_bracket_items(
-        press_zero_for_agent(
-            normalize_nid(strip_foreign_script(strip_protocol(text)))
+    text = hard_break_lines(
+        break_bracket_items(
+            press_zero_for_agent(
+                normalize_nid(strip_foreign_script(strip_protocol(text)))
+            )
         )
     )
     if not text or not mentions_tool(text):
