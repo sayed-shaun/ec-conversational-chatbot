@@ -26,7 +26,13 @@ from typing import AsyncIterator, Dict, List
 
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
-from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
+from src.chatbot.prompt import (
+    ACKNOWLEDGED_REPLY,
+    ACKNOWLEDGED_REPLY_EN,
+    FALLBACK_REPLY,
+    GREETING_OPENERS,
+    SYSTEM_PROMPT,
+)
 from src.chatbot.sanitize import StreamScrubber, scrub
 from src.chatbot.smart import SmartReply, smart_client
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
@@ -134,7 +140,29 @@ class Chat:
             logger.warning(
                 "scrubbed tool-name talk from reply session=%s", self.session_id
             )
-        return cleaned or FALLBACK_REPLY
+        return self._no_reopening(cleaned) or FALLBACK_REPLY
+
+    def _no_reopening(self, text: str) -> str:
+        """Keep the opening greeting to the opening.
+
+        Rule 8 mandates one sentence for a greeting and rule 8a forbids it
+        afterwards, but the model writes it anyway for a bare "আচ্ছা" often
+        enough that the prompt cannot be the only line of defence -- it was
+        one turn in two before this. Offering to help someone who has just
+        acknowledged an answer restarts the conversation: they acknowledge
+        again, and on a phone line the call cannot end.
+
+        Only an exact match is replaced. Anything the model has written
+        around the sentence is a real reply and is left alone.
+        """
+        stripped = (text or "").strip()
+        if stripped not in GREETING_OPENERS:
+            return text
+        if not any(turn.get("role") == "assistant" for turn in self.history):
+            return text
+        logger.info("greeting reopened a live turn session=%s", self.session_id)
+        english = stripped == GREETING_OPENERS[1]
+        return ACKNOWLEDGED_REPLY_EN if english else ACKNOWLEDGED_REPLY
 
     async def _ask_smart(self, message: str) -> SmartReply | None:
         """Put this turn to the smart API, or None if the hybrid is off."""
@@ -381,7 +409,7 @@ class Chat:
                 tail = scrubber.flush()
                 if tail:
                     yield {"type": "token", "text": tail}
-                reply_text = scrubber.emitted.strip()
+                reply_text = self._no_reopening(scrubber.emitted.strip())
                 if not reply_text:
                     reply_text = FALLBACK_REPLY
                     yield {"type": "token", "text": reply_text}
