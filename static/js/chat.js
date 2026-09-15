@@ -78,9 +78,33 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
   let answerRaw = '';
   let failed = false;
   let finalReply = '';
+  // Rendering is coalesced onto a frame rather than run per token.
+  // renderAnswer reparses the whole markdown and rescans it for KaTeX, so
+  // doing it on every token makes the cost quadratic in the answer's length
+  // -- which is why a long reply showed a wait well past the time the
+  // server had already finished.
+  let renderFrame = 0;
   // The knowledge-base entry this answer came from, '' when the LLM wrote
   // it. Carried to the TTS call, which is where it decides caching.
   let finalTag = '';
+
+  /** Draw the answer at most once a frame, with whatever has arrived. */
+  const scheduleRender = () => {
+    if (renderFrame) return;
+    renderFrame = requestAnimationFrame(() => {
+      renderFrame = 0;
+      renderAnswer(answerEl, answerRaw);
+    });
+  };
+
+  /** Draw immediately, dropping any frame still queued. */
+  const renderNow = () => {
+    if (renderFrame) {
+      cancelAnimationFrame(renderFrame);
+      renderFrame = 0;
+    }
+    renderAnswer(answerEl, answerRaw);
+  };
 
   const handle = (ev) => {
 
@@ -171,7 +195,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
           collapseThinking();
         }
         answerRaw += ev.text;
-        renderAnswer(answerEl, answerRaw);
+        scheduleRender();
         break;
 
       case 'error':
@@ -183,8 +207,8 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
       case 'done': {
         if (!answerRaw.trim()) {
           answerRaw = ev.reply || '(কোনো উত্তর পাওয়া যায়নি)';
-          renderAnswer(answerEl, answerRaw);
         }
+        renderNow();
         finalReply = ev.reply || answerRaw;
         finalTag = ev.tag || '';
 
