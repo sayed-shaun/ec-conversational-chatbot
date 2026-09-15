@@ -22,13 +22,14 @@ The prompt text lives in prompt.py and the tool catalogue in tools.py.
 """
 
 import json
+import re
 from typing import AsyncIterator, Dict, List
 
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
 from src.chatbot.prompt import (
     ACKNOWLEDGED_REPLY,
-    ACKNOWLEDGED_REPLY_EN,
+    ENGLISH_SLIP_REPLY,
     FALLBACK_REPLY,
     GREETING_OPENERS,
     SYSTEM_PROMPT,
@@ -40,6 +41,9 @@ from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Any Bengali character. One is enough to say the model answered in Bengali.
+_BENGALI = re.compile(r"[\u0980-\u09FF]")
 
 
 #: Name the smart-bot lookup reports itself under in the stream. It is not a
@@ -140,7 +144,7 @@ class Chat:
             logger.warning(
                 "scrubbed tool-name talk from reply session=%s", self.session_id
             )
-        return self._no_reopening(cleaned) or FALLBACK_REPLY
+        return self._in_bengali(self._no_reopening(cleaned)) or FALLBACK_REPLY
 
     def _no_reopening(self, text: str) -> str:
         """Keep the opening greeting to the opening.
@@ -161,8 +165,32 @@ class Chat:
         if not any(turn.get("role") == "assistant" for turn in self.history):
             return text
         logger.info("greeting reopened a live turn session=%s", self.session_id)
-        english = stripped == GREETING_OPENERS[1]
-        return ACKNOWLEDGED_REPLY_EN if english else ACKNOWLEDGED_REPLY
+        return ACKNOWLEDGED_REPLY
+
+    def _in_bengali(self, text: str) -> str:
+        """Keep an English reply from reaching a citizen.
+
+        Every reply is Bengali: the prompt says so in the strongest terms it
+        has, and the model mostly obeys. Where it slips is the farewell --
+        "You're welcome. Goodbye." went out to someone who had written
+        Bengali throughout. Down a phone line that is worse than on screen,
+        because the TTS voice is Bengali and the caller hears it attempting
+        English.
+
+        A reply with no Bengali character anywhere is the test. One Bengali
+        word is enough to pass, which is what leaves an ordinary answer alone
+        -- they carry English inside them all the time, a URL or an
+        initialism, and none of that is the model answering in English.
+        """
+        stripped = (text or "").strip()
+        if not stripped or _BENGALI.search(stripped):
+            return text
+        logger.warning(
+            "reply came back with no Bengali, replacing: %r session=%s",
+            stripped[:80],
+            self.session_id,
+        )
+        return ENGLISH_SLIP_REPLY
 
     async def _ask_smart(self, message: str) -> SmartReply | None:
         """Put this turn to the smart API, or None if the hybrid is off."""
@@ -409,7 +437,9 @@ class Chat:
                 tail = scrubber.flush()
                 if tail:
                     yield {"type": "token", "text": tail}
-                reply_text = self._no_reopening(scrubber.emitted.strip())
+                reply_text = self._in_bengali(
+                    self._no_reopening(scrubber.emitted.strip())
+                )
                 if not reply_text:
                     reply_text = FALLBACK_REPLY
                     yield {"type": "token", "text": reply_text}
