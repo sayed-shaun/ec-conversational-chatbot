@@ -29,6 +29,7 @@ from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 from src.speech import transform
 from src.speech.asr import asr_client
+from src.speech.trim import trim_silence
 from src.speech.tts import tts_client
 
 logger = get_logger(__name__)
@@ -166,6 +167,16 @@ async def asr(
     audio = await file.read()
     if not audio:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    # Before the forward, not in the browser: a phone caller reaches this
+    # same ASR through Asterisk, which leaves the same endpointing hangover
+    # on the end of a clip and cannot trim it. Without this a one-word turn
+    # -- "হ্যাঁ", "না" -- transcribes as nothing, and those are most of what
+    # a caller says. See src/speech/trim.py for the measurements.
+    sent = len(audio)
+    audio = trim_silence(audio, file.filename or "")
+    if len(audio) != sent:
+        logger.debug("trimmed silence %d -> %d bytes", sent, len(audio))
 
     started = time.perf_counter()
     try:
