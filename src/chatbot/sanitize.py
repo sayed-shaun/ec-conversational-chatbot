@@ -251,6 +251,40 @@ def press_zero_for_agent(text: str) -> str:
     return out
 
 
+# The corpus writes a list inline, with a bracketed number and no line break
+# anywhere in it:
+#
+#     নিজ নাম (বাংলা ও ইংরেজী) এর ক্ষেত্রেঃ (১) অনলাইন জন্ম সনদ (বাংলা ও
+#     ইংরেজী) (২) শিক্ষাগত যোগ্যতা ... (৩) ড্রাইভিং লাইসেন্স (যদি থাকে)
+#
+# Five separate documents arrive as one unbroken paragraph. On screen the
+# citizen has to pick them out by eye; down a phone line it is worse, because
+# the brackets do not survive the trip to the voice and the caller hears
+# "...সনদ বাংলা ও ইংরেজী দুই শিক্ষাগত যোগ্যতা...", the item number sounding
+# like part of the document before it.
+#
+# Both are the same missing line break, so it is put in here rather than in
+# either consumer -- there is nowhere else that serves both. The browser reads
+# the two trailing spaces as markdown's hard break; the speech pipeline's
+# layout stage turns the newline into a daṛi and then finds the marker at the
+# start of a line, where its existing rule gives it a comma to pause on. An
+# Asterisk dialplan does neither, and does not have to: what reaches the TTS
+# already carries the pauses.
+#
+# One or two digits and nothing else inside the brackets, which is what leaves
+# a year -- "(১৯৭২)" -- and the parentheticals the corpus is full of --
+# "(বাংলা ও ইংরেজী)", "(ভ্যাটসহ)", "(যদি থাকে)" -- untouched. Something has to
+# follow, or a trailing "(২)" would be given a line of its own to sit on.
+_BRACKET_ITEM = re.compile(r"[ \t]+(?=\((?:[০-৯]{1,2}|[0-9]{1,2})\)[ \t]*\S)")
+
+
+def break_bracket_items(text: str) -> str:
+    """Put each inline "(১)" item on its own line."""
+    if not text:
+        return text or ""
+    return _BRACKET_ITEM.sub("  \n", text)
+
+
 def mentions_tool(text: str) -> bool:
     """True if `text` names one of the tools."""
     return bool(_TOOL_MENTION.search(text or ""))
@@ -266,8 +300,10 @@ def scrub(text: str) -> str:
     Returns "" if that removes everything -- the caller decides what to say
     instead, since an empty reply is never the right thing to show.
     """
-    text = press_zero_for_agent(
-        normalize_nid(strip_foreign_script(strip_protocol(text)))
+    text = break_bracket_items(
+        press_zero_for_agent(
+            normalize_nid(strip_foreign_script(strip_protocol(text)))
+        )
     )
     if not text or not mentions_tool(text):
         return text or ""
