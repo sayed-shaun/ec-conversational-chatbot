@@ -14,6 +14,7 @@ from typing import AsyncIterator, Dict, List
 
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
+from src.chatbot.faq_direct import try_direct
 from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
 from src.chatbot.sanitize import StreamScrubber, scrub
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
@@ -21,6 +22,42 @@ from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def drop_dead_end_turns(history: List[dict]) -> List[dict]:
+    """Remove turns that ended in a "call 105" non-answer.
+
+    Left in the transcript, such a turn teaches the model that this question
+    has no answer: asked again, it repeats the old reply without searching.
+    A turn is a dead end when its final reply sends the user to 105 but the
+    knowledge base did not say that -- the search failed, was not confident,
+    or the model chose to give up on a result. Dropping the whole turn keeps
+    tool-call/tool-result pairs intact.
+    """
+    if not history:
+        return history
+    system, rest = history[:1], history[1:]
+    turns: List[List[dict]] = []
+    for msg in rest:
+        if msg.get("role") == "user" or not turns:
+            turns.append([])
+        turns[-1].append(msg)
+
+    def dead_end(turn: List[dict]) -> bool:
+        final = turn[-1]
+        if final.get("role") != "assistant" or "১০৫" not in (final.get("content") or ""):
+            return False
+        tool_text = " ".join(
+            m.get("content") or "" for m in turn if m.get("role") == "tool"
+        )
+        if not tool_text:
+            return True
+        if '"confident": false' in tool_text or '"error"' in tool_text:
+            return True
+        return "১০৫" not in tool_text
+
+    kept = [m for turn in turns if not dead_end(turn) for m in turn]
+    return system + kept
 
 
 class Chat:
@@ -52,7 +89,7 @@ class Chat:
     async def load(cls, session_id: str) -> "Chat":
         """Restore a conversation from the checkpointer, or start a new one."""
         history = await checkpointer.load(session_id)
-        chat = cls(session_id, history or cls.new_history())
+        chat = cls(session_id, drop_dead_end_turns(history) or cls.new_history())
         chat.refresh_prompt()
         return chat
 
@@ -72,6 +109,7 @@ class Chat:
         session. So the window is walked forward until it starts on a plain
         user message.
         """
+        self.history = drop_dead_end_turns(self.history)
         system_msg, rest = self.history[0], self.history[1:]
         max_messages = settings.MAX_HISTORY_TURNS * 2
         if len(rest) <= max_messages:
@@ -105,7 +143,14 @@ class Chat:
 
     async def send(self, message: str, params: dict | None = None) -> str:
         """Run one turn and return the assistant's final reply text."""
+        direct = await try_direct(message, self.history)
         self.history.append({"role": "user", "content": message})
+        if direct:
+            reply_text = direct["answer"].strip()
+            logger.info("direct answer tag=%s session=%s", direct["tag"], self.session_id)
+            self.history.append({"role": "assistant", "content": reply_text})
+            await self.save()
+            return reply_text
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
@@ -177,7 +222,25 @@ class Chat:
           done         - final assembled reply
           error        - something failed mid-turn
         """
+        direct = await try_direct(message, self.history)
         self.history.append({"role": "user", "content": message})
+        if direct:
+            reply_text = direct["answer"].strip()
+            logger.info("direct answer tag=%s session=%s", direct["tag"], self.session_id)
+            yield {
+                "type": "tool_result",
+                "name": "faq_direct",
+                "confident": True,
+                "best_tag": direct["tag"],
+                "best_score": direct.get("top_cosine"),
+                "alternatives": 0,
+                "candidates": [],
+            }
+            self.history.append({"role": "assistant", "content": reply_text})
+            await self.save()
+            yield {"type": "token", "text": reply_text}
+            yield {"type": "done", "reply": reply_text}
+            return
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):

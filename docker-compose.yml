@@ -6,7 +6,7 @@ services:
       dockerfile: mcp.Dockerfile
     container_name: ec-conversational-mcp
     environment:
-      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:?set TOP_SIMILAR_API_URL in .env}
+      FAQ_MODEL_URL: ${FAQ_MODEL_URL:?set FAQ_MODEL_URL in .env}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
       TAG_ANSWER_URL: ${TAG_ANSWER_URL:?set TAG_ANSWER_URL in .env}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}

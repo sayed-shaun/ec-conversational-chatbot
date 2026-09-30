@@ -3,8 +3,8 @@ EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
 --------------------------------------------------------------------------
 Exposes a single MCP tool, `search_ec_services`, that:
 
-  1. Sends the user's question to the external `top_similar` embedding-search
-     API (your existing service, e.g. http://<host>:8002) and gets back the
+  1. Sends the user's question to the FAQ model's `top_similar` embedding-search
+     API (FAQ_MODEL_URL, e.g. http://<host>:8001) and gets back the
      top_k nearest questions with their `tag` and `cosine_similarity`.
   2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag).
   3. Looks up the canonical Bengali answer for each unique tag in
@@ -84,9 +84,9 @@ def search_ec_services(
     """
     try:
         response = requests.post(
-            settings.TOP_SIMILAR_API_URL,
+            settings.FAQ_MODEL_URL.rstrip("/") + "/ec_bot/top_similar/",
             json={"question": question, "top_k": top_k},
-            timeout=settings.TOP_SIMILAR_TIMEOUT,
+            timeout=settings.FAQ_MODEL_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()

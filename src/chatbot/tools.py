@@ -48,16 +48,30 @@ TOOLS = [
 ]
 
 
+def _has_bengali(text: str) -> bool:
+    return any("\u0980" <= ch <= "\u09ff" for ch in text or "")
+
+
 async def run_tool(
     name: str, args: dict, fallback_question: str, params: dict | None = None
 ) -> dict:
     """Execute one tool call. `params` holds the UI's retrieval overrides,
     which win over whatever top_k the model happened to ask for."""
     if name == "search_ec_services":
+        question = args.get("question") or fallback_question
+        # The model sometimes translates a Bangla question into English before
+        # searching, and the FAQ model handles English badly (it can return a
+        # confident but unrelated tag). Rewrites that stay in Bangla are kept,
+        # since they carry context from earlier turns.
+        if _has_bengali(fallback_question) and not _has_bengali(question):
+            logger.warning("model translated the search query; using the user's text")
+            question = fallback_question
         overrides = dict(params or {})
-        top_k = overrides.pop("top_k", None) or args.get("top_k", 10)
+        # The model sometimes asks for top_k=1, which leaves the search
+        # nothing to rank; never let it go below the default depth.
+        top_k = overrides.pop("top_k", None) or max(args.get("top_k") or 10, 10)
         return await mcp_client.search_ec_services(
-            args.get("question", fallback_question), top_k, **overrides
+            question, top_k, **overrides
         )
     logger.warning("model requested unknown tool: %s", name)
     return {"error": f"unknown tool: {name}"}

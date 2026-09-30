@@ -88,6 +88,10 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
+    # When set, each turn is first sent to this FAQ model's /qa and answered
+    # directly if its reranker and retrieval agree; otherwise the LLM handles it.
+    FAQ_MODEL_URL: str = Field(default="")
+    FAQ_MODEL_TIMEOUT: float = Field(default=5.0, gt=0.0)
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")
@@ -112,10 +116,10 @@ class McpSettings(_Settings):
 
     model_config = _BASE_CONFIG
 
-    REQUIRED: ClassVar[Tuple[str, ...]] = ("TOP_SIMILAR_API_URL", "TAG_ANSWER_URL")
+    REQUIRED: ClassVar[Tuple[str, ...]] = ("FAQ_MODEL_URL", "TAG_ANSWER_URL")
 
-    TOP_SIMILAR_API_URL: str = Field(default="")
-    TOP_SIMILAR_TIMEOUT: float = Field(default=10.0)
+    FAQ_MODEL_URL: str = Field(default="")
+    FAQ_MODEL_TIMEOUT: float = Field(default=10.0)
 
     TAG_ANSWER_URL: str = Field(default="")
     TAG_ANSWER_URL_TIMEOUT: float = Field(default=15.0)
