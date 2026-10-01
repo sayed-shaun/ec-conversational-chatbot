@@ -73,10 +73,47 @@ and calls llama-server again — up to `MAX_TOOL_HOPS` times.
 
 The model decides whether a question needs a lookup. If it does, `search_ec_services`
 queries `top_similar`, de-duplicates by `tag`, resolves each tag to its answer,
-and returns the best one with a confidence flag and alternatives. Below
+and returns up to three candidates for the model to choose between. Below
 `CONFIDENCE_THRESHOLD` the system prompt tells the model to admit it doesn't
 know. Small talk skips the tool. Everything, tool calls included, stays in the
 session history so follow-ups keep context.
+
+### Who answers a turn
+
+With `FAQ_MODEL_URL` set, every turn goes to the FAQ bot first; the LLM only
+gets the turns it should not answer verbatim.
+
+```mermaid
+flowchart LR
+    Q([User message]) --> FAQ["FAQ bot<br/>/ec_bot/smart/verbose/"]
+    FAQ --> C1{"Call OK?"}
+    C1 -- no --> LLM
+    C1 -- yes --> C2{"BanglaBERT and<br/>e5 agree?"}
+    C2 -- no --> LLM
+    C2 -- yes --> C3{"Small-talk<br/>tag?"}
+    C3 -- yes --> LLM
+    C3 -- no --> DIRECT(["Dataset answer,<br/>word for word"])
+
+    LLM["LLM"] --> C4{"Small talk?"}
+    C4 -- yes --> SELF(["Natural reply,<br/>no search"])
+    C4 -- no --> SEARCH["search_ec_services<br/>3 candidates"]
+    SEARCH --> C5{"Confident<br/>match?"}
+    C5 -- no --> FALLBACK(["০ চেপে প্রতিনিধির<br/>সাথে কথা বলুন"])
+    C5 -- yes --> PICK(["LLM picks the matching<br/>candidate and answers"])
+```
+
+| Check | Passes when |
+|---|---|
+| Call OK? | `FAQ_MODEL_URL` is set and the call returns within `FAQ_MODEL_TIMEOUT` |
+| BanglaBERT and e5 agree? | `trace.agreement.e5_bb_agreed` and `e5_bb_comparable` are both true |
+| Small-talk tag? | the tag is in `LIST_OF_TAGS_WILL_GO_TO_LLM`: greetings, salam_dao, goodbye, unable_to_answer, fraction |
+| Small talk? | hi, আচ্ছা, ধন্যবাদ, "what can you do" — the LLM decides; if the search only finds small-talk tags it is told to reply itself |
+| Confident match? | the top hit is above `CONFIDENCE_THRESHOLD` (0.55); small-talk tags are never offered as candidates |
+
+A direct answer also updates the FAQ bot's own transcript, so its follow-up
+handling ("কত সময় লাগবে?") works on the next turn. On the gold set, 94% of
+turns are answered directly; most of the rest are turns where BanglaBERT was
+unavailable or unsure and the models disagreed.
 
 ## API
 
