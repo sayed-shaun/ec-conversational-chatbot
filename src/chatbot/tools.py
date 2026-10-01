@@ -71,15 +71,16 @@ def tool_summary(name: str, result: dict) -> dict:
     if result.get("error"):
         return {"name": name, "error": result["error"]}
 
-    alts = result.get("alternatives") or []
+    cands = result.get("candidates") or []
     return {
         "name": name,
         "confident": result.get("confident"),
-        "best_tag": result.get("best_tag"),
-        "best_score": result.get("best_score"),
-        "threshold": result.get("confidence_threshold"),
-        "alternatives": len(alts),
+        "best_tag": result.get("top_tag"),
+        "best_score": result.get("top_score"),
+        "threshold": result.get("CONFIDENCE_THRESHOLD"),
+        "alternatives": max(len(cands) - 1, 0),
         "candidates": [
-            {"tag": a.get("tag"), "score": a.get("cosine_similarity")} for a in alts[:5]
+            {"tag": c.get("tag"), "score": c.get("cosine_similarity")}
+            for c in cands[:5]
         ],
     }

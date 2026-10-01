@@ -39,6 +39,12 @@ NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
 
+# How many unique tags go to the LLM, and how many raw hits to pull so that
+# many distinct tags are usually available (near-duplicate questions repeat a
+# tag, so ten hits can collapse to two).
+MAX_CANDIDATES = 5
+RETRIEVAL_DEPTH = 30
+
 mcp = FastMCP(name="ec-conversational-search")
 
 
@@ -73,6 +79,9 @@ def search_ec_services(
         show_candidates: Include the `alternatives` list in the result.
 
     Returns:
+        (Superseded by the payload below: up to five unique-tag `candidates`,
+        each with tag, matched_question, cosine_similarity and answer, for the
+        caller to choose between.)
         A dict containing:
           - input_question: the original question
           - confident: bool, whether the best match cleared min_score and
@@ -85,7 +94,7 @@ def search_ec_services(
     try:
         response = requests.post(
             settings.TOP_SIMILAR_API_URL,
-            json={"question": question, "top_k": top_k},
+            json={"question": question, "top_k": max(top_k, RETRIEVAL_DEPTH)},
             timeout=settings.TOP_SIMILAR_TIMEOUT,
         )
         response.raise_for_status()
@@ -121,32 +130,42 @@ def search_ec_services(
         for match in unique_matches
     ]
 
-    best = enriched[0]
-    best_score = best.get("cosine_similarity") or 0.0
+    top = enriched[0]
+    top_score = top.get("cosine_similarity") or 0.0
 
     threshold = settings.CONFIDENCE_THRESHOLD if min_score is None else min_score
 
     runner_up = 0.0
     if len(enriched) > 1:
         runner_up = enriched[1].get("cosine_similarity") or 0.0
-    clears_margin = best_score >= runner_up * min_score_ratio
+    clears_margin = top_score >= runner_up * min_score_ratio
 
-    confident = best_score >= threshold and clears_margin
+    confident = top_score >= threshold and clears_margin
 
-    best_answer = best["answer"]
-    if not confident and handle_unknown:
-        best_answer = NOT_FOUND_ANSWER
-
-    return {
+    base = {
         "input_question": data.get("input_question", question),
         "confident": confident,
         "CONFIDENCE_THRESHOLD": threshold,
-        "min_score_ratio": min_score_ratio,
-        "runner_up_score": runner_up,
-        "best_tag": best["tag"],
-        "best_answer": best_answer,
-        "best_score": best_score,
-        "alternatives": enriched[1:] if show_candidates else [],
+        "top_tag": top["tag"],
+        "top_score": top_score,
+    }
+    if not confident and handle_unknown:
+        return {**base, "answer": NOT_FOUND_ANSWER, "candidates": []}
+
+    candidates = [
+        {"rank": rank, **item} for rank, item in enumerate(enriched[:MAX_CANDIDATES], 1)
+    ]
+    return {
+        **base,
+        "instruction": (
+            "candidates are the closest knowledge-base entries, ranked by text "
+            "similarity only -- the top one is not necessarily the right one. "
+            "Choose the single candidate whose matched_question means the same "
+            "as the user's question (mind distinctions such as present vs "
+            "permanent address, or a different country) and answer from that "
+            "candidate alone. Do not merge candidates about different topics."
+        ),
+        "candidates": candidates if show_candidates else candidates[:1],
     }
 
 
