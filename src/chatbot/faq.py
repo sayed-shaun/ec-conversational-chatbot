@@ -39,13 +39,19 @@ async def ask_smart(question: str, messages: str, chat_id: str) -> Optional[Smar
         return None
 
     tag = str(data.get("response_tag") or "")
+    source = str(data.get("prediction_source") or "")
     agreement = (data.get("trace") or {}).get("agreement") or {}
     agreed = bool(agreement.get("e5_bb_agreed") and agreement.get("e5_bb_comparable"))
     text = _CANNED_CLOSER.sub("", str(data.get("response") or "")).strip()
-    use = agreed and bool(text) and tag not in settings.LIST_OF_TAGS_WILL_GO_TO_LLM
+    use = (
+        agreed
+        and bool(text)
+        and tag not in settings.LIST_OF_TAGS_WILL_GO_TO_LLM
+        and not source.startswith("fraction")
+    )
     logger.info(
         "smart turn chat_id=%s tag=%s source=%s agreed=%s direct=%s",
-        chat_id, tag, data.get("prediction_source"), agreed, use,
+        chat_id, tag, source, agreed, use,
     )
     if not use:
         return None
