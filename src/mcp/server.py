@@ -60,9 +60,28 @@ def search_ec_services(
     unique_matches = []
     for match in matches:
         tag = match.get("tag")
-        if tag and tag not in seen_tags:
+        if tag and tag not in seen_tags and tag not in settings.LIST_OF_TAGS_WILL_GO_TO_LLM:
             seen_tags.add(tag)
             unique_matches.append(match)
+
+    if not unique_matches:
+        threshold = settings.CONFIDENCE_THRESHOLD if min_score is None else min_score
+        if (matches[0].get("cosine_similarity") or 0.0) >= threshold:
+            return {
+                "input_question": data.get("input_question", question),
+                "confident": True,
+                "candidates": [],
+                "instruction": (
+                    "No knowledge-base entry: this is small talk or a question about "
+                    "you. Reply briefly and naturally yourself."
+                ),
+            }
+        return {
+            "input_question": data.get("input_question", question),
+            "confident": False,
+            "answer": NOT_FOUND_ANSWER,
+            "candidates": [],
+        }
 
     enriched = [
         {

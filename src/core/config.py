@@ -20,6 +20,9 @@ class _Settings(BaseSettings):
     """Base for both services' settings."""
 
     REQUIRED: ClassVar[Tuple[str, ...]] = ()
+    LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
+        default=["greetings", "salam_dao", "goodbye", "unable_to_answer", "fraction"]
+    )
 
     def check_required(self) -> None:
         """Raise if a deployment-specific variable was left unset."""
@@ -59,9 +62,6 @@ class ChatbotSettings(_Settings):
     FAQ_MODEL_URL: str = Field(default="")
     FAQ_MODEL_TIMEOUT: float = Field(default=10.0, gt=0.0)
     FAQ_MODEL_USE_LLM_SELECTOR: bool = Field(default=False)
-    LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
-        default=["greetings", "salam_dao", "goodbye", "unable_to_answer"]
-    )
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")
