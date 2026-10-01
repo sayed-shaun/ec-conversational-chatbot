@@ -24,13 +24,13 @@ class SmartAnswer:
 
 async def ask_smart(question: str, messages: str, chat_id: str) -> Optional[SmartAnswer]:
     """The smart bot's answer if both models agree on it, else None."""
-    if not settings.SMART_BOT_URL:
+    if not settings.FAQ_MODEL_URL:
         return None
-    url = settings.SMART_BOT_URL.rstrip("/") + "/ec_bot/smart/verbose/"
-    params = {"use_llm_selector": str(settings.SMART_BOT_USE_LLM_SELECTOR).lower()}
+    url = settings.FAQ_MODEL_URL.rstrip("/") + "/ec_bot/smart/verbose/"
+    params = {"use_llm_selector": str(settings.FAQ_MODEL_USE_LLM_SELECTOR).lower()}
     body = {"question": question, "messages": messages, "chat_id": chat_id}
     try:
-        async with httpx.AsyncClient(timeout=settings.SMART_BOT_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=settings.FAQ_MODEL_TIMEOUT) as client:
             response = await client.post(url, json=body, params=params)
             response.raise_for_status()
             data = response.json()

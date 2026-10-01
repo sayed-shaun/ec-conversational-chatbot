@@ -55,9 +55,9 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
-    SMART_BOT_URL: str = Field(default="")
-    SMART_BOT_TIMEOUT: float = Field(default=10.0, gt=0.0)
-    SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=False)
+    FAQ_MODEL_URL: str = Field(default="")
+    FAQ_MODEL_TIMEOUT: float = Field(default=10.0, gt=0.0)
+    FAQ_MODEL_USE_LLM_SELECTOR: bool = Field(default=False)
     LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
         default=["greetings", "salam_dao", "goodbye", "unable_to_answer"]
     )
