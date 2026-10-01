@@ -5,8 +5,7 @@ Two things this service talks to, one class each. The speech services live in
 src/speech, since nothing in a typed turn touches them:
 
 - `OpenAIClient` — the `openai` SDK pointed at llama-server's
-  OpenAI-compatible /v1 endpoint, for both one-shot and streaming
-  completions.
+  OpenAI-compatible /v1 endpoint, for streaming completions.
 - `McpClient` — the EC FAQ MCP server (Streamable HTTP, FastMCP), for the
   `search_ec_services` tool.
 
@@ -17,7 +16,7 @@ settings at import, so callers just use them.
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Client
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -28,7 +27,7 @@ logger = get_logger(__name__)
 class OpenAIClient:
     """Chat completions against llama-server.
 
-    Holds a sync client for one-shot calls and an async client for streaming.
+    Streaming only: a non-streamed turn consumes the same stream (Chat.send).
     Streaming has to be async: iterating a sync stream would block the event
     loop and stall every other request the server is handling.
     """
@@ -36,7 +35,6 @@ class OpenAIClient:
     def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
         self.model = model
-        self.client = OpenAI(base_url=base_url, api_key="not-needed")
         self.async_client = AsyncOpenAI(base_url=base_url, api_key="not-needed")
 
     def _kwargs(
@@ -58,27 +56,6 @@ class OpenAIClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
         return kwargs
-
-    def chat_completion(
-        self,
-        messages: List[dict],
-        tools: Optional[List[dict]] = None,
-        tool_choice: str = "auto",
-    ) -> Any:
-        """Send one chat-completion request and return the assistant message.
-
-        Raises whatever the SDK raises; callers decide how to degrade.
-        """
-        logger.debug(
-            "chat completion model=%s messages=%d tools=%d",
-            self.model,
-            len(messages),
-            len(tools or []),
-        )
-        completion = self.client.chat.completions.create(
-            **self._kwargs(messages, tools, tool_choice, stream=False)
-        )
-        return completion.choices[0].message
 
     async def chat_completion_stream(
         self,
