@@ -1,14 +1,4 @@
-"""
-Ask the EC smart bot (/ec_bot/smart/verbose/) to answer a turn directly.
-
-The smart bot answers from the dataset word for word. We trust it only when
-BanglaBERT and e5 agree on the tag (`trace.agreement`), and never for small
-talk; in every other case, including any failure, this returns None and the
-LLM takes the turn.
-
-The API is stateful: it takes the `messages` string it returned last turn and
-hands back an updated one, which the caller stores and sends again.
-"""
+"""Ask the EC smart bot (/ec_bot/smart/verbose/) to answer a turn directly."""
 
 import re
 from dataclasses import dataclass
@@ -21,7 +11,6 @@ from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# The dataset ends every answer with this question; the reply already ends the turn.
 _CANNED_CLOSER = re.compile(r"\s*আপনাকে আর কোন তথ্য দিয়ে সহযোগিতা করতে পারি\?\s*$")
 
 

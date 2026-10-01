@@ -1,18 +1,4 @@
-"""
-SQLite checkpointer for conversation transcripts.
-
-Each session's full message list is stored as one JSON blob, which matches how
-a turn actually uses it: read the whole history, append to it, write it back
-trimmed. That avoids reassembling a row-per-message table on every request.
-
-sqlite3 is blocking, so every call runs in a worker thread. Blocking the event
-loop would stall the token streaming this service exists to serve.
-
-Scope: this gives durability across restarts, not horizontal scale. One
-container against one file is well within SQLite's range; several replicas
-sharing that file over a volume is fragile, and across hosts it does not work
-at all. That needs Redis or Postgres.
-"""
+"""SQLite checkpointer for conversation transcripts."""
 
 import asyncio
 import json
@@ -41,12 +27,7 @@ class SqliteCheckpointer:
         self.db_path = db_path
 
     def _connect(self) -> sqlite3.Connection:
-        """Open a connection.
-
-        A fresh one per operation: sqlite3 connections are not safe to share
-        across threads, and asyncio.to_thread gives no guarantee about which
-        thread runs a call. For a local file this costs microseconds.
-        """
+        """Open a fresh connection; sqlite3 connections are not thread-safe."""
         connection = sqlite3.connect(self.db_path, timeout=5.0)
         connection.execute("PRAGMA journal_mode=WAL")
         return connection
@@ -109,12 +90,7 @@ class SqliteCheckpointer:
             )
 
     def _purge_expired(self, ttl_minutes: int) -> int:
-        """Delete checkpoints untouched for longer than the TTL.
-
-        updated_at is always written by _save as a UTC ISO-8601 string, so
-        every row shares one format and offset; a string comparison against a
-        cutoff built the same way orders correctly.
-        """
+        """Delete checkpoints untouched for longer than the TTL."""
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
         ).isoformat()
@@ -147,12 +123,7 @@ class SqliteCheckpointer:
         return await asyncio.to_thread(self._count)
 
     async def purge_expired(self, ttl_minutes: int | None = None) -> int:
-        """Clear finished conversations, returning how many were removed.
-
-        A chat has no observable end over HTTP, so "finished" means idle: no
-        turn for ttl_minutes. A TTL of 0 or less disables expiry and keeps
-        transcripts until they are reset explicitly.
-        """
+        """Clear finished conversations, returning how many were removed."""
         ttl = settings.SESSION_TTL_MINUTES if ttl_minutes is None else ttl_minutes
         if ttl <= 0:
             return 0

@@ -1,19 +1,4 @@
-"""
-Central configuration for every EC service, loaded from environment variables
-(and an optional local .env for standalone/dev runs). Modules should import the
-settings object they need from here instead of calling os.getenv directly, so
-every knob is declared, typed, and validated in one place.
-
-No host, endpoint or credential belonging to a deployment is written here.
-Defaults cover only values that are the same everywhere -- timeouts, limits,
-container-internal names -- so this file can be read by anyone without
-disclosing where the services run. Anything deployment-specific defaults to
-empty and comes from the environment; see .env.example.
-
-Both settings objects are built at import, so a field one service needs cannot
-be a required field without breaking the other. Each service instead calls
-check_required() for its own settings at startup, which names what is missing.
-"""
+"""Configuration for both services, read from environment variables and .env."""
 
 import os
 from typing import List, ClassVar, Tuple
@@ -32,13 +17,7 @@ _SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class _Settings(BaseSettings):
-    """Base for both services' settings.
-
-    REQUIRED names the variables that have no sensible default because they
-    identify a deployment. They are declared with an empty default so that
-    importing this module never fails for a service that does not need them,
-    and checked by the service that does, at startup.
-    """
+    """Base for both services' settings."""
 
     REQUIRED: ClassVar[Tuple[str, ...]] = ()
 
@@ -54,11 +33,7 @@ class _Settings(BaseSettings):
 
 
 def _default_tag_answer_path() -> str:
-    """Locate tag_answer.json in a source checkout or inside the image.
-
-    In the container the MCP service's files are copied to the WORKDIR, so the
-    file sits beside the process; from a checkout it lives in src/mcp/.
-    """
+    """Locate tag_answer.json in a source checkout or inside the image."""
     candidates = [
         os.path.join(_SRC_DIR, "mcp", "tag_answer.json"),
         os.path.join(os.getcwd(), "tag_answer.json"),
@@ -70,15 +45,7 @@ def _default_tag_answer_path() -> str:
 
 
 class ChatbotSettings(_Settings):
-    """Settings for the FastAPI chatbot backend.
-
-    TRACE_DIR is empty by default, which disables tracing. Enabling it
-    records each turn's question, reply and -- for a voice turn -- both
-    sides of the audio, with the question text in the filename.
-    TRACE_TTL_DAYS of 0 keeps those recordings indefinitely, so that
-    enabling TRACE_DIR never deletes existing records; set a positive
-    value to have them expire.
-    """
+    """Settings for the FastAPI chatbot backend."""
 
     model_config = _BASE_CONFIG
 
@@ -88,14 +55,9 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
-    # Base URL of the EC smart bot. When set, each turn goes to its
-    # /ec_bot/smart/verbose/ first and is answered directly if BanglaBERT and
-    # e5 agree on the tag; otherwise the LLM handles it. Empty = LLM only.
     SMART_BOT_URL: str = Field(default="")
     SMART_BOT_TIMEOUT: float = Field(default=10.0, gt=0.0)
     SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=False)
-    # Tags the LLM answers even when the smart bot is sure: small talk, where a
-    # fixed dataset line reads as canned, and the bot's own "no answer".
     LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
         default=["greetings", "salam_dao", "goodbye", "unable_to_answer"]
     )

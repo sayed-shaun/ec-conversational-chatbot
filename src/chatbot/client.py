@@ -1,17 +1,4 @@
-"""
-Outbound clients for the conversation itself.
-
-Two things this service talks to, one class each. The speech services live in
-src/speech, since nothing in a typed turn touches them:
-
-- `OpenAIClient` — the `openai` SDK pointed at llama-server's
-  OpenAI-compatible /v1 endpoint, for streaming completions.
-- `McpClient` — the EC FAQ MCP server (Streamable HTTP, FastMCP), for the
-  `search_ec_services` tool.
-
-Module-level `openai_client` and `mcp_client` instances are built from
-settings at import, so callers just use them.
-"""
+"""Clients for llama-server (OpenAI API) and the EC FAQ MCP server."""
 
 from typing import Any, Dict, List, Optional
 
@@ -25,12 +12,7 @@ logger = get_logger(__name__)
 
 
 class OpenAIClient:
-    """Chat completions against llama-server.
-
-    Streaming only: a non-streamed turn consumes the same stream (Chat.send).
-    Streaming has to be async: iterating a sync stream would block the event
-    loop and stall every other request the server is handling.
-    """
+    """Chat completions against llama-server."""
 
     def __init__(self, base_url: str, model: str) -> None:
         self.base_url = base_url
@@ -63,13 +45,7 @@ class OpenAIClient:
         tools: Optional[List[dict]] = None,
         tool_choice: str = "auto",
     ) -> Any:
-        """Open a streaming chat completion and return the async chunk iterator.
-
-        Chunk deltas carry three interesting fields, and llama-server may send
-        any combination of them: `reasoning_content` (the model thinking out
-        loud), `content` (the actual answer), and `tool_calls` (streamed
-        incrementally -- id and name arrive first, then argument fragments).
-        """
+        """Open a streaming chat completion and return the async chunk iterator."""
         logger.debug(
             "stream completion model=%s messages=%d tools=%d",
             self.model,
@@ -82,19 +58,13 @@ class OpenAIClient:
 
 
 class McpClient:
-    """Calls tools on the EC FAQ MCP server.
-
-    A fresh session per call is simple and robust for a low/medium traffic FAQ
-    bot; swap for a persistent client if you need lower latency at higher
-    volume.
-    """
+    """Calls tools on the EC FAQ MCP server."""
 
     def __init__(self, server_url: str) -> None:
         self.server_url = server_url
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
-        """Invoke one MCP tool. Never raises: failures come back as
-        `{"error": ...}` so the LLM can see what went wrong and say so."""
+        """Invoke one MCP tool; failures come back as {"error": ...}."""
         try:
             async with Client(self.server_url) as client:
                 result = await client.call_tool(name, arguments)

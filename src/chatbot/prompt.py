@@ -1,20 +1,4 @@
-"""
-User-facing prompt text and canned replies.
-
-Kept apart from the logic that uses them so the Bengali wording can be
-reviewed or edited without reading any code -- and so tuning the assistant's
-behaviour is a change to one file.
-
-SYSTEM_PROMPT is deliberately extractive, not generative: the model's job is
-to pick the right entry out of the knowledge base and reproduce it word for
-word. Nothing it writes itself can reach a citizen, because a 2-bit
-quantised model paraphrasing official NID guidance is how wrong fees and
-invented steps get published.
-
-BACKUP_SYSTEM_PROMPT is the previous generative version, which let the model
-compose and translate its own wording. Nothing reads it; it is kept here so
-the rollback is a one-line swap rather than a trip through git history.
-"""
+"""User-facing prompt text and canned replies."""
 
 SYSTEM_PROMPT = (
     "তুমি বাংলাদেশ নির্বাচন কমিশনের (EC) জাতীয় পরিচয়পত্র (NID) ও ভোটার সেবা বিষয়ক "
@@ -75,7 +59,6 @@ FALLBACK_REPLY = (
     "দুঃখিত, উত্তর তৈরি করতে সমস্যা হচ্ছে। অনুগ্রহপূর্বক আবার চেষ্টা করুন অথবা ১০৫-এ কল করুন।"
 )
 
-# Rollback copy of the generative prompt replaced on 2026-09-10. Unused.
 BACKUP_SYSTEM_PROMPT = (
     "তুমি বাংলাদেশ নির্বাচন কমিশনের (EC) জাতীয় পরিচয়পত্র (NID) ও ভোটার সেবা বিষয়ক "
     "একজন সহায়ক সহকারী। নিচের নিয়মগুলো কঠোরভাবে মেনে চলবে।\n\n"

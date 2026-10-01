@@ -1,13 +1,4 @@
-"""
-The chat engine.
-
-A Chat instance is one conversation: it holds that session's transcript and
-drives a user turn to a final reply, calling tools as the model asks for them.
-Load one per request with Chat.load(), which restores the transcript from the
-checkpointer.
-
-The prompt text lives in prompt.py and the tool catalogue in tools.py.
-"""
+"""The chat engine."""
 
 import json
 from typing import AsyncIterator, Dict, List
@@ -32,7 +23,6 @@ class Chat:
     ) -> None:
         self.session_id = session_id
         self.history = history
-        # The smart bot's own transcript string, sent back to it verbatim.
         self.smart_messages = smart_messages
 
     @staticmethod
@@ -41,13 +31,7 @@ class Chat:
         return [{"role": "system", "content": SYSTEM_PROMPT}]
 
     def refresh_prompt(self) -> None:
-        """Put the current system prompt at the head of the transcript.
-
-        Done on every turn rather than once when the session began, because the
-        transcript is checkpointed to SQLite: a prompt frozen at session
-        creation would outlive an edit to prompt.py, and a running session
-        would keep answering under wording that no longer exists in the repo.
-        """
+        """Put the current system prompt at the head of the transcript."""
         if self.history and self.history[0].get("role") == "system":
             self.history[0] = {"role": "system", "content": SYSTEM_PROMPT}
         else:
@@ -67,16 +51,7 @@ class Chat:
         await checkpointer.delete(session_id)
 
     def trim(self) -> None:
-        """Keep the system prompt plus only the most recent turns, so the
-        context window doesn't grow unbounded over a long chat.
-
-        The window is deliberately not a plain tail slice. A raw slice can cut
-        between an assistant `tool_calls` message and the `tool` results
-        answering it, and an orphaned `tool` message is rejected by the
-        chat-completions API, which would break every later request in this
-        session. So the window is walked forward until it starts on a plain
-        user message.
-        """
+        """Keep the system prompt and the most recent turns."""
         system_msg, rest = self.history[0], self.history[1:]
         max_messages = settings.MAX_HISTORY_TURNS * 2
         if len(rest) <= max_messages:
@@ -115,18 +90,7 @@ class Chat:
     async def stream(
         self, message: str, params: dict | None = None
     ) -> AsyncIterator[dict]:
-        """Run one turn, yielding events as they happen so the caller can push
-        them to the browser instead of making the user wait for the whole
-        answer.
-
-        Event types yielded:
-          reasoning    - a chunk of the model's thinking (not part of the reply)
-          tool_call    - the model decided to call a tool (name + arguments)
-          tool_result  - condensed result of that call
-          token        - a chunk of the actual answer text
-          done         - final assembled reply
-          error        - something failed mid-turn
-        """
+        """Run one turn, yielding reasoning, tool_call, tool_result, token and done events."""
         smart = await self._ask_smart(message)
         self.history.append({"role": "user", "content": message})
         if smart:

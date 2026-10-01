@@ -1,11 +1,4 @@
-"""
-The tool catalogue: what the model may call, how each call is executed, and
-how its result is condensed for the live UI.
-
-The schema here is what gets sent to llama-server in every chat-completion
-request. Execution goes through the MCP client, so this module is the seam
-between "the model asked for something" and "the MCP server did it".
-"""
+"""Tools the model may call, how each call runs, and its summary for the UI."""
 
 from src.chatbot.client import mcp_client
 from src.core.logger import get_logger
@@ -51,8 +44,7 @@ TOOLS = [
 async def run_tool(
     name: str, args: dict, fallback_question: str, params: dict | None = None
 ) -> dict:
-    """Execute one tool call. `params` holds the UI's retrieval overrides,
-    which win over whatever top_k the model happened to ask for."""
+    """Execute one tool call."""
     if name == "search_ec_services":
         overrides = dict(params or {})
         top_k = overrides.pop("top_k", None) or args.get("top_k", 10)
@@ -64,8 +56,7 @@ async def run_tool(
 
 
 def tool_summary(name: str, result: dict) -> dict:
-    """Condense a tool result into something small enough to show live in the
-    UI without dumping the whole Bengali answer into a status line."""
+    """Condense a tool result for the live UI."""
     if not isinstance(result, dict):
         return {"name": name}
     if result.get("error"):

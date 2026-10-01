@@ -1,30 +1,4 @@
-"""
-EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
---------------------------------------------------------------------------
-Exposes a single MCP tool, `search_ec_services`, that:
-
-  1. Sends the user's question to the external `top_similar` embedding-search
-     API (your existing service, e.g. http://<host>:8002) and gets back the
-     top_k nearest questions with their `tag` and `cosine_similarity`.
-  2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag).
-  3. Looks up the canonical Bengali answer for each unique tag in
-     `tag_answer.json`.
-  4. Returns a compact, ready-to-use payload: the single best answer plus a
-     list of alternatives, so the calling LLM doesn't have to guess.
-
-Served over Streamable HTTP at `/mcp` so it's reachable from other
-containers (e.g. the chatbot service) as well as from any MCP client
-(Claude Desktop, Claude Code, Cursor, etc.) that supports HTTP transport.
-For local stdio use instead, set MCP_TRANSPORT=stdio.
-
-The knowledge base is fetched live from GitHub at startup and optionally
-kept fresh on an interval (see data_fetch.py: TAG_ANSWER_URL, GITHUB_TOKEN,
-TAG_ANSWER_REFRESH_SECONDS), falling back to the bundled tag_answer.json
-if the live fetch fails.
-
-All configuration lives in src/core/config.py (Settings, pydantic-settings) —
-see that file for every available environment variable.
-"""
+"""EC FAQ MCP server exposing one tool, search_ec_services."""
 
 import requests
 from fastmcp import FastMCP
@@ -39,9 +13,6 @@ NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
 )
 
-# How many unique tags go to the LLM, and how many raw hits to pull so that
-# many distinct tags are usually available (near-duplicate questions repeat a
-# tag, so ten hits can collapse to two).
 MAX_CANDIDATES = 5
 RETRIEVAL_DEPTH = 30
 
@@ -57,39 +28,12 @@ def search_ec_services(
     handle_unknown: bool = True,
     show_candidates: bool = True,
 ) -> dict:
-    """Search the EC (Bangladesh Election Commission) NID/voter FAQ knowledge
-    base for the closest matching question(s) to a user's query, and resolve
-    each match to its canonical Bengali answer.
+    """Search the EC NID/voter FAQ and return up to five candidate answers, one per tag.
 
-    Always call this for factual questions about NID cards, voter
-    registration, corrections, fees, postal ballots, etc. Do not call it for
-    plain greetings or small talk.
-
-    Args:
-        question: The user's raw question, in Bengali or English.
-        top_k: How many nearest-neighbour candidates to retrieve (default 10).
-        min_score: Minimum cosine similarity for the best match to count as
-            reliable. Overrides settings.CONFIDENCE_THRESHOLD for this call.
-        min_score_ratio: Required margin between the best and second-best
-            match: the best must score at least `second_best * ratio` to be
-            treated as confident. 1.0 (the default) demands no margin.
-        handle_unknown: When the best match is not confident, replace the
-            answer with an explicit "I don't know, call 105" instead of
-            returning a probably-wrong answer.
-        show_candidates: Include the `alternatives` list in the result.
-
-    Returns:
-        (Superseded by the payload below: up to five unique-tag `candidates`,
-        each with tag, matched_question, cosine_similarity and answer, for the
-        caller to choose between.)
-        A dict containing:
-          - input_question: the original question
-          - confident: bool, whether the best match cleared min_score and
-                       the min_score_ratio margin
-          - best_tag / best_answer / best_score: the top unique match
-          - alternatives: list of other unique {tag, answer, cosine_similarity}
-                          found within the top_k results (empty when
-                          show_candidates is false)
+    Call this for any factual question about NID cards, voter registration,
+    corrections, fees or postal voting; not for greetings or small talk. The
+    candidates are ranked by text similarity only: pick the one whose
+    matched_question means the same as the user's question.
     """
     try:
         response = requests.post(
@@ -171,8 +115,7 @@ def search_ec_services(
 
 @mcp.tool
 def health() -> dict:
-    """Basic liveness check for this MCP server, including whether
-    tag_answer.json loaded correctly."""
+    """Liveness check, including how many answers tag_answer.json loaded."""
     return {"status": "ok", "tag_count": len(TAG_ANSWERS)}
 
 
