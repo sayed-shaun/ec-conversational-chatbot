@@ -13,7 +13,7 @@ NOT_FOUND_ANSWER = (
     "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। ০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
 )
 
-MAX_CANDIDATES = 5
+MAX_CANDIDATES = 3
 RETRIEVAL_DEPTH = 30
 
 mcp = FastMCP(name="ec-conversational-search")
@@ -28,7 +28,7 @@ def search_ec_services(
     handle_unknown: bool = True,
     show_candidates: bool = True,
 ) -> dict:
-    """Search the EC NID/voter FAQ and return up to five candidate answers, one per tag.
+    """Search the EC NID/voter FAQ and return up to three candidate answers, one per tag.
 
     Call this for any factual question about NID cards, voter registration,
     corrections, fees or postal voting; not for greetings or small talk. The
