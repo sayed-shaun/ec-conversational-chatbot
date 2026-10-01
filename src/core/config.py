@@ -26,7 +26,9 @@ class _Settings(BaseSettings):
 
     def check_required(self) -> None:
         """Raise if a deployment-specific variable was left unset."""
-        missing = [name for name in self.REQUIRED if not str(getattr(self, name, "")).strip()]
+        missing = [
+            name for name in self.REQUIRED if not str(getattr(self, name, "")).strip()
+        ]
         if missing:
             raise RuntimeError(
                 "missing required environment variable(s): "
