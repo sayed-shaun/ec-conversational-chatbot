@@ -15,7 +15,8 @@ from typing import AsyncIterator, Dict, List
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
 from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
-from src.chatbot.sanitize import StreamScrubber, scrub
+from src.chatbot.sanitize import StreamScrubber
+from src.chatbot.faq import SmartAnswer, ask_smart
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -26,9 +27,13 @@ logger = get_logger(__name__)
 class Chat:
     """One conversation, identified by its session id."""
 
-    def __init__(self, session_id: str, history: List[dict]) -> None:
+    def __init__(
+        self, session_id: str, history: List[dict], smart_messages: str = ""
+    ) -> None:
         self.session_id = session_id
         self.history = history
+        # The smart bot's own transcript string, sent back to it verbatim.
+        self.smart_messages = smart_messages
 
     @staticmethod
     def new_history() -> List[dict]:
@@ -51,8 +56,8 @@ class Chat:
     @classmethod
     async def load(cls, session_id: str) -> "Chat":
         """Restore a conversation from the checkpointer, or start a new one."""
-        history = await checkpointer.load(session_id)
-        chat = cls(session_id, history or cls.new_history())
+        history, smart_messages = await checkpointer.load(session_id)
+        chat = cls(session_id, history or cls.new_history(), smart_messages)
         chat.refresh_prompt()
         return chat
 
@@ -86,81 +91,26 @@ class Chat:
     async def save(self) -> None:
         """Trim and checkpoint the transcript."""
         self.trim()
-        await checkpointer.save(self.session_id, self.history)
+        await checkpointer.save(self.session_id, self.history, self.smart_messages)
 
-    def _clean(self, text: str) -> str:
-        """Strip any tool-name talk out of a finished reply.
+    async def _ask_smart(self, message: str) -> SmartAnswer | None:
+        """The smart bot's direct answer for this turn, or None for the LLM."""
+        return await ask_smart(message, self.smart_messages, self.session_id)
 
-        The model is asked not to mention the tool, but does anyway often
-        enough that the prompt cannot be the only line of defence. If that
-        removes the entire reply there is nothing worth showing, so the
-        canned fallback stands in.
-        """
-        cleaned = scrub(text).strip()
-        if cleaned != (text or "").strip():
-            logger.warning(
-                "scrubbed tool-name talk from reply session=%s", self.session_id
-            )
-        return cleaned or FALLBACK_REPLY
+    async def _accept_smart(self, reply: SmartAnswer) -> str:
+        """Record the smart bot's answer as this turn's reply and checkpoint."""
+        self.history.append({"role": "assistant", "content": reply.text})
+        self.smart_messages = reply.messages or self.smart_messages
+        await self.save()
+        return reply.text
 
     async def send(self, message: str, params: dict | None = None) -> str:
         """Run one turn and return the assistant's final reply text."""
-        self.history.append({"role": "user", "content": message})
-
-        reply_text = ""
-        for hop in range(settings.MAX_TOOL_HOPS):
-            try:
-                msg = openai_client.chat_completion(self.history, tools=TOOLS)
-            except Exception:
-                logger.exception("llama-server call failed session=%s", self.session_id)
-                reply_text = FALLBACK_REPLY
-                self.history.append({"role": "assistant", "content": reply_text})
-                break
-
-            if not msg.tool_calls:
-                reply_text = self._clean(msg.content or "")
-                self.history.append({"role": "assistant", "content": reply_text})
-                break
-
-            self.history.append(
-                {
-                    "role": "assistant",
-                    "content": msg.content or "",
-                    "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
-                }
-            )
-
-            for tool_call in msg.tool_calls:
-                try:
-                    args = json.loads(tool_call.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-
-                logger.info(
-                    "tool call hop=%d name=%s session=%s",
-                    hop + 1,
-                    tool_call.function.name,
-                    self.session_id,
-                )
-                result = await run_tool(tool_call.function.name, args, message, params)
-                self.history.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    }
-                )
-        else:
-            logger.warning(
-                "hit MAX_TOOL_HOPS=%d without a final reply session=%s",
-                settings.MAX_TOOL_HOPS,
-                self.session_id,
-            )
-            reply_text = FALLBACK_REPLY
-            self.history.append({"role": "assistant", "content": reply_text})
-
-        await self.save()
-        return reply_text
+        reply = ""
+        async for event in self.stream(message, params):
+            if event["type"] == "done":
+                reply = event["reply"]
+        return reply
 
     async def stream(
         self, message: str, params: dict | None = None
@@ -177,7 +127,22 @@ class Chat:
           done         - final assembled reply
           error        - something failed mid-turn
         """
+        smart = await self._ask_smart(message)
         self.history.append({"role": "user", "content": message})
+        if smart:
+            yield {
+                "type": "tool_result",
+                "name": "ec_bot_smart",
+                "confident": True,
+                "best_tag": smart.tag,
+                "best_score": smart.probability,
+                "alternatives": 0,
+                "candidates": [],
+            }
+            reply_text = await self._accept_smart(smart)
+            yield {"type": "token", "text": reply_text}
+            yield {"type": "done", "reply": reply_text}
+            return
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):

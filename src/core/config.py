@@ -16,7 +16,7 @@ check_required() for its own settings at startup, which names what is missing.
 """
 
 import os
-from typing import ClassVar, Tuple
+from typing import List, ClassVar, Tuple
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -88,6 +88,17 @@ class ChatbotSettings(_Settings):
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
+    # Base URL of the EC smart bot. When set, each turn goes to its
+    # /ec_bot/smart/verbose/ first and is answered directly if BanglaBERT and
+    # e5 agree on the tag; otherwise the LLM handles it. Empty = LLM only.
+    SMART_BOT_URL: str = Field(default="")
+    SMART_BOT_TIMEOUT: float = Field(default=10.0, gt=0.0)
+    SMART_BOT_USE_LLM_SELECTOR: bool = Field(default=False)
+    # Tags the LLM answers even when the smart bot is sure: small talk, where a
+    # fixed dataset line reads as canned, and the bot's own "no answer".
+    LIST_OF_TAGS_WILL_GO_TO_LLM: List[str] = Field(
+        default=["greetings", "salam_dao", "goodbye", "unable_to_answer"]
+    )
     ASR_TTS_URL: str = Field(default="")
     ASR_TIMEOUT: float = Field(default=60.0)
     ASR_LANGUAGE: str = Field(default="bn")

@@ -57,16 +57,22 @@ class SqliteCheckpointer:
         os.makedirs(parent, exist_ok=True)
         with self._connect() as connection:
             connection.execute(self.SCHEMA)
+            columns = [r[1] for r in connection.execute("PRAGMA table_info(checkpoints)")]
+            if "smart_messages" not in columns:
+                connection.execute(
+                    "ALTER TABLE checkpoints ADD COLUMN smart_messages TEXT NOT NULL DEFAULT ''"
+                )
         logger.info("checkpointer ready sqlite=%s", self.db_path)
 
-    def _load(self, session_id: str) -> list[dict] | None:
+    def _load(self, session_id: str) -> tuple[list[dict] | None, str]:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT history FROM checkpoints WHERE session_id = ?", (session_id,)
+                "SELECT history, smart_messages FROM checkpoints WHERE session_id = ?",
+                (session_id,),
             ).fetchone()
 
         if row is None:
-            return None
+            return None, ""
 
         try:
             history = json.loads(row[0])
@@ -74,25 +80,26 @@ class SqliteCheckpointer:
             logger.warning(
                 "corrupt checkpoint for session=%s; starting fresh", session_id
             )
-            return None
+            return None, ""
 
         if not isinstance(history, list) or not history:
-            return None
-        return history
+            return None, ""
+        return history, row[1] or ""
 
-    def _save(self, session_id: str, history: list[dict]) -> None:
+    def _save(self, session_id: str, history: list[dict], smart_messages: str) -> None:
         payload = json.dumps(history, ensure_ascii=False)
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO checkpoints (session_id, history, updated_at)
-                VALUES (?, ?, ?)
+                INSERT INTO checkpoints (session_id, history, smart_messages, updated_at)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     history = excluded.history,
+                    smart_messages = excluded.smart_messages,
                     updated_at = excluded.updated_at
                 """,
-                (session_id, payload, now),
+                (session_id, payload, smart_messages, now),
             )
 
     def _delete(self, session_id: str) -> None:
@@ -121,13 +128,15 @@ class SqliteCheckpointer:
         with self._connect() as connection:
             return connection.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
-    async def load(self, session_id: str) -> list[dict] | None:
-        """Return a stored transcript, or None if this session is new."""
+    async def load(self, session_id: str) -> tuple[list[dict] | None, str]:
+        """Return (transcript, smart-bot transcript); (None, "") for a new session."""
         return await asyncio.to_thread(self._load, session_id)
 
-    async def save(self, session_id: str, history: list[dict]) -> None:
+    async def save(
+        self, session_id: str, history: list[dict], smart_messages: str = ""
+    ) -> None:
         """Persist a transcript, replacing any earlier checkpoint."""
-        await asyncio.to_thread(self._save, session_id, history)
+        await asyncio.to_thread(self._save, session_id, history, smart_messages)
 
     async def delete(self, session_id: str) -> None:
         """Drop a session's checkpoint."""
