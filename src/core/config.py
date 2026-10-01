@@ -54,6 +54,7 @@ class ChatbotSettings(_Settings):
     LLAMA_BASE_URL: str = Field(default="")
     LLAMA_MODEL: str = Field(default="local-model")
     LLAMA_REASONING_EFFORT: str = Field(default="")
+    LLAMA_TEMPERATURE: float = Field(default=0.2, ge=0.0, le=2.0)
     MCP_SERVER_URL: str = Field(default="http://ec-conversational-mcp:9000/mcp")
     FAQ_MODEL_URL: str = Field(default="")
     FAQ_MODEL_TIMEOUT: float = Field(default=10.0, gt=0.0)

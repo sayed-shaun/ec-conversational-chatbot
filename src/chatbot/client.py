@@ -29,6 +29,7 @@ class OpenAIClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
+            "temperature": settings.LLAMA_TEMPERATURE,
         }
         if stream:
             kwargs["stream"] = True
