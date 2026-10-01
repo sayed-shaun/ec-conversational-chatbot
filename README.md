@@ -47,7 +47,7 @@ flowchart LR
 
     LLM["LLM"] --> C4{"Small talk?"}
     C4 -- yes --> SELF(["Natural reply,<br/>no search"])
-    C4 -- no --> SEARCH["search_ec_services<br/>3 candidates"]
+    C4 -- no --> SEARCH["search_ec_services<br/>5 candidates"]
     SEARCH --> C5{"Confident<br/>match?"}
     C5 -- no --> FALLBACK(["০ চেপে প্রতিনিধির<br/>সাথে কথা বলুন"])
     C5 -- yes --> PICK(["LLM picks the matching<br/>candidate and answers"])
