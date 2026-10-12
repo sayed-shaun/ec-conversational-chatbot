@@ -29,7 +29,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     chat = await Chat.load(session_id)
     reply = await chat.send(req.message, params)
 
-    return ChatResponse(session_id=session_id, reply=reply)
+    return ChatResponse(session_id=session_id, reply=reply, tag=chat.last_tag)
 
 
 def _sse(payload: dict) -> str:

@@ -35,6 +35,7 @@ class ResetRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
+    tag: Optional[str] = None
 
 
 class ResetResponse(BaseModel):

@@ -186,22 +186,13 @@ Dependencies run one way: `api → chatbot → core`. FastAPI is imported only u
 `static/index.html` is self-contained, so it can be deployed on its own while
 the backend keeps running wherever it is. Three requirements:
 
-1. **HTTPS backend.** An HTTPS page can't call an HTTP API. Caddy fronts the
-   chatbot; an optional `ngrok` service tunnels it without a domain:
+1. **HTTPS backend.** An HTTPS page can't call an HTTP API, so put the
+   backend behind an HTTPS URL (Caddy fronts the chatbot).
 
-   ```bash
-   docker compose --profile public up -d     # needs NGROK_AUTHTOKEN in .env
-   curl -s http://localhost:4040/api/tunnels | python3 -c \
-     "import sys,json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])"
-   ```
-
-   It's a separate profile so a plain `docker compose up` never needs an ngrok
-   account. On the free tier the URL changes every restart — hence step 2.
-
-2. **`API_BASE` must point at that URL.** The file defaults to `''`
+2. **`API_BASE` must point at the backend URL.** The file defaults to `''`
    (same-origin), which this repo's own deployment needs. `vercel.json` patches
    that line at build time from an `NGROK_URL` env var set in the Vercel project,
-   so the tunnel URL never lands in the repo. Redeploy when it changes.
+   so the URL never lands in the repo. Redeploy when it changes.
 
 3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
 

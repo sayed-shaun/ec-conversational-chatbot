@@ -54,6 +54,10 @@ class ChatbotSettings(BaseSettings):
         ),
     )
 
+    LLAMA_THINKING: bool = Field(
+        default=False,
+        description="Off sends enable_thinking=false in chat_template_kwargs (needs llama-server --jinja).",
+    )
     LLAMA_REASONING_EFFORT: str = Field(
         default="",
         description=(

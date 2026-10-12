@@ -22,23 +22,47 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 
+def exact_answer(result: dict) -> str:
+    """The reply for a search_faq result: the dataset's best answer, verbatim.
+
+    The model is not asked to compose a final reply. An unconfident match
+    already carries the "call 105" answer (see the MCP server), and a failed
+    search gets the generic fallback.
+    """
+    if not isinstance(result, dict) or result.get("error"):
+        return FALLBACK_REPLY
+    return result.get("best_answer") or FALLBACK_REPLY
+
+
 class Chat:
     """One conversation, identified by its session id."""
 
     def __init__(self, session_id: str, history: List[dict]) -> None:
         self.session_id = session_id
         self.history = history
+        self.last_tag = ""
 
     @staticmethod
     def new_history() -> List[dict]:
         """A fresh transcript: just the system prompt."""
         return [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    def refresh_prompt(self) -> None:
+        """Put the current system prompt at the head of the transcript, so a
+        session saved under an older prompt follows today's rules."""
+        system = {"role": "system", "content": SYSTEM_PROMPT}
+        if self.history and self.history[0].get("role") == "system":
+            self.history[0] = system
+        else:
+            self.history.insert(0, system)
+
     @classmethod
     async def load(cls, session_id: str) -> "Chat":
         """Restore a conversation from the checkpointer, or start a new one."""
         history = await checkpointer.load(session_id)
-        return cls(session_id, history or cls.new_history())
+        chat = cls(session_id, history or cls.new_history())
+        chat.refresh_prompt()
+        return chat
 
     @staticmethod
     async def reset(session_id: str) -> None:
@@ -78,8 +102,9 @@ class Chat:
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
+            exact = None
             try:
-                msg = openai_client.chat_completion(self.history, tools=TOOLS)
+                msg = await openai_client.chat_completion(self.history, tools=TOOLS)
             except Exception:
                 logger.exception("llama-server call failed session=%s", self.session_id)
                 reply_text = FALLBACK_REPLY
@@ -119,6 +144,14 @@ class Chat:
                         "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
+                if tool_call.function.name == "search_faq":
+                    exact = exact_answer(result)
+                    self.last_tag = (result.get("best_tag") or "") if result.get("confident") else ""
+
+            if exact is not None:
+                reply_text = exact
+                self.history.append({"role": "assistant", "content": reply_text})
+                break
         else:
             logger.warning(
                 "hit MAX_TOOL_HOPS=%d without a final reply session=%s",
@@ -153,6 +186,7 @@ class Chat:
             content_parts: List[str] = []
             pending: Dict[int, dict] = {}
             streamed_any_token = False
+            exact = None
 
             try:
                 stream = await openai_client.chat_completion_stream(
@@ -250,6 +284,14 @@ class Chat:
                         "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
+                if tc["name"] == "search_faq":
+                    exact = exact_answer(result)
+
+            if exact is not None:
+                reply_text = exact
+                self.history.append({"role": "assistant", "content": reply_text})
+                yield {"type": "token", "text": reply_text}
+                break
         else:
             logger.warning(
                 "hit MAX_TOOL_HOPS=%d without a final reply session=%s (stream)",

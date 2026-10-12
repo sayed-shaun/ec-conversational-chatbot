@@ -53,12 +53,14 @@ class OpenAIClient:
             kwargs["stream"] = True
         if settings.LLAMA_REASONING_EFFORT:
             kwargs["reasoning_effort"] = settings.LLAMA_REASONING_EFFORT
+        if not settings.LLAMA_THINKING:
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
         return kwargs
 
-    def chat_completion(
+    async def chat_completion(
         self,
         messages: List[dict],
         tools: Optional[List[dict]] = None,
@@ -74,7 +76,7 @@ class OpenAIClient:
             len(messages),
             len(tools or []),
         )
-        completion = self.client.chat.completions.create(
+        completion = await self.async_client.chat.completions.create(
             **self._kwargs(messages, tools, tool_choice, stream=False)
         )
         return completion.choices[0].message

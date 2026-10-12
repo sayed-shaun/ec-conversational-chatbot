@@ -790,14 +790,6 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          /*
-           * ngrok's free tier serves a browser interstitial warning page
-           * (ERR_NGROK_6024) to any request carrying a browser User-Agent,
-           * so every API call from a real browser would get HTML back
-           * instead of JSON. This header opts out. Harmless when API_BASE
-           * is not an ngrok tunnel.
-           */
-          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({
           session_id: sessionId,
@@ -944,7 +936,6 @@
 
     const res = await fetch(API_BASE + '/asr/upload', {
       method: 'POST',
-      headers: { 'ngrok-skip-browser-warning': 'true' },
       body: form,
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1043,7 +1034,6 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
           },
           body: JSON.stringify({ session_id: sessionId }),
         });
