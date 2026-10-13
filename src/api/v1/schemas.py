@@ -79,6 +79,7 @@ class TtsRequest(BaseModel):
 
 
 class AsrResponse(BaseModel):
-    """Transcript of one uploaded clip."""
+    """Transcript of one uploaded clip, and how long the ASR service took."""
 
     text: str
+    ms: float = 0.0

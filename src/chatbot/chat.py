@@ -10,6 +10,7 @@ The prompt text lives in prompt.py and the tool catalogue in tools.py.
 """
 
 import json
+import time
 from typing import AsyncIterator, Dict, List
 
 from src.chatbot.checkpointer import checkpointer
@@ -181,6 +182,11 @@ class Chat:
         """
         self.history.append({"role": "user", "content": message})
 
+        timings: Dict[str, float] = {}
+
+        def spent(stage: str, since: float) -> None:
+            timings[stage] = timings.get(stage, 0) + (time.perf_counter() - since) * 1000
+
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
             content_parts: List[str] = []
@@ -188,6 +194,7 @@ class Chat:
             streamed_any_token = False
             exact = None
 
+            llm_started = time.perf_counter()
             try:
                 stream = await openai_client.chat_completion_stream(
                     self.history, tools=TOOLS
@@ -220,6 +227,7 @@ class Chat:
                             if tc.function.arguments:
                                 slot["arguments"] += tc.function.arguments
             except Exception as exc:
+                spent("llm", llm_started)
                 logger.exception(
                     "llama-server stream failed session=%s", self.session_id
                 )
@@ -231,6 +239,8 @@ class Chat:
                     yield {"type": "token", "text": reply_text}
                 self.history.append({"role": "assistant", "content": reply_text})
                 break
+
+            spent("llm", llm_started)
 
             if not pending:
                 reply_text = "".join(content_parts)
@@ -274,7 +284,9 @@ class Chat:
                 except json.JSONDecodeError:
                     args = {}
 
+                tool_started = time.perf_counter()
                 result = await run_tool(tc["name"], args, message, params)
+                spent("search", tool_started)
                 yield {"type": "tool_result", **tool_summary(tc["name"], result)}
 
                 self.history.append(
@@ -303,4 +315,8 @@ class Chat:
             yield {"type": "token", "text": reply_text}
 
         await self.save()
-        yield {"type": "done", "reply": reply_text}
+        yield {
+            "type": "done",
+            "reply": reply_text,
+            "timings": {stage: round(ms) for stage, ms in timings.items()},
+        }

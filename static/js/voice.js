@@ -439,7 +439,9 @@ const VoiceMode = {
 
     this.setOrbState('thinking');
     this.setStatus('শুনছি থেকে লিখছে…');
+    const since = performance.now();
     let text = '';
+    let asrMs = 0;
     try {
       // Trim the VAD's trailing hangover before upload -- see prepareForAsr.
       // A failure here is not fatal: fall back to the raw recording, which
@@ -458,7 +460,7 @@ const VoiceMode = {
       } catch (prepErr) {
         clip = blob;
       }
-      text = await transcribe(clip, traceMeta());
+      ({ text, ms: asrMs } = await transcribe(clip, traceMeta()));
     } catch (err) {
       if (stale()) return;
       this.setOrbState('error');
@@ -481,7 +483,7 @@ const VoiceMode = {
 
     let result;
     try {
-      result = await ask(text, 'voice', turnId);
+      result = await ask(text, 'voice', turnId, { asrMs, since });
     } catch (err) {
       result = { text: '', failed: true };
     }
@@ -504,7 +506,13 @@ const VoiceMode = {
     // request was sent. Barge-in's grace period is measured from here, so
     // it must not start ticking during synthesis, when there is nothing
     // playing to barge in on.
+    const ttsStartedAt = performance.now();
+    let ttsTimed = false;
     const beginSpeaking = () => {
+      if (!ttsTimed && result.addTiming) {
+        ttsTimed = true;
+        result.addTiming('TTS', performance.now() - ttsStartedAt);
+      }
       if (stale()) return;
       this.setOrbState('speaking');
       this.setStatus('বলছে… (থামাতে কথা বলুন)');

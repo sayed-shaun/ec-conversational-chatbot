@@ -151,7 +151,6 @@
   color: var(--muted);
   margin-top: 7px;
   font-variant-numeric: tabular-nums;
-  cursor: help;
 }
 .cursor::after {
   content: "\258B";

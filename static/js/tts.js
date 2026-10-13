@@ -101,7 +101,6 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
     },
     body: JSON.stringify({
       input: text,
@@ -155,7 +154,6 @@ export async function synthesizeSpeech(text, meta) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
     },
     body: JSON.stringify({
       input: text,

@@ -209,11 +209,10 @@ export async function transcribe(blob, meta) {
 
   const res = await fetch(API_BASE + '/api/v1/asr', {
     method: 'POST',
-    headers: { 'ngrok-skip-browser-warning': 'true' },
     body: form,
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
 
   const data = await res.json();
-  return (data.text || '').trim();
+  return { text: (data.text || '').trim(), ms: data.ms };
 }

@@ -5,7 +5,7 @@
 
 import { API_BASE } from './config.js';
 import { formEl, inputEl, sendBtn, resetBtn, messagesEl } from './elements.js';
-import { el, formatSeconds } from './dom.js';
+import { el } from './dom.js';
 import { addRow, addUserMessage, stickToBottom } from './transcript.js';
 import { renderAnswer } from './answer.js';
 
@@ -33,12 +33,19 @@ export const newTurnId = () =>
   (crypto.randomUUID ? crypto.randomUUID()
                      : String(Date.now()) + Math.random().toString(16).slice(2));
 
+const STAGE_LABELS = { faq: 'FAQ', search: 'top-k', llm: 'LLM' };
+const secs = (ms) => (ms / 1000).toFixed(2) + 's';
+
 /*
  * Runs one turn. `mode` tells the backend which system prompt to answer under
  * -- 'voice' replies are read aloud by TTS, so they are shaped differently
  * from typed ones (see src/chatbot/prompt.py).
+ *
+ * Voice mode passes `voice` = {asrMs, since}: the ASR stage to show first,
+ * and when the turn really began, so the total covers the transcription too.
+ * The returned addTiming() appends a later stage (TTS) to this turn's line.
  */
-export async function ask(text, mode = 'text', turnId = newTurnId()) {
+export async function ask(text, mode = 'text', turnId = newTurnId(), voice = null) {
   const bubble = addRow('bot');
 
   const think = el('details', 'think', bubble);
@@ -57,8 +64,19 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
 
   // Timing, so the wait after a tool call is visible rather than a mystery.
   const startedAt = performance.now();
-  let toolResultAt = null;
-  let firstTokenAt = null;
+  const since = voice ? voice.since : startedAt;
+  const stages = voice ? [['ASR', voice.asrMs]] : [];
+  let timing = null;
+  const renderTiming = () => {
+    if (!timing) timing = el('div', 'timing', bubble);
+    timing.textContent = '\u23F1 ' +
+      stages.map(([label, ms]) => label + ' ' + secs(ms)).join(' · ') +
+      (stages.length ? ' · ' : '') + 'total ' + secs(performance.now() - since);
+  };
+  const addTiming = (label, ms) => {
+    stages.push([label, ms]);
+    renderTiming();
+  };
   let answerRaw = '';
   let failed = false;
   let finalReply = '';
@@ -113,7 +131,6 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
       }
 
       case 'tool_result': {
-        toolResultAt = performance.now();
         if (!chip) break;
         chip.classList.remove('running');
         const body = chip.querySelector('.tool-body');
@@ -149,7 +166,6 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
       case 'token':
         if (!answerStarted) {
           answerStarted = true;
-          firstTokenAt = performance.now();
           collapseThinking();
         }
         answerRaw += ev.text;
@@ -169,21 +185,11 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
         }
         finalReply = ev.reply || answerRaw;
 
-        const total = performance.now() - startedAt;
-        const timing = el('div', 'timing', bubble);
-        timing.textContent = '\u23F1 ' + formatSeconds(total) + ' সেকেন্ড';
+        for (const [stage, ms] of Object.entries(ev.timings || {})) {
+          stages.push([STAGE_LABELS[stage] || stage, ms]);
+        }
+        renderTiming();
 
-        // Breakdown on hover: most of a slow turn is the model thinking
-        // after the tool result, which is otherwise invisible.
-        const parts = [];
-        if (toolResultAt !== null) {
-          parts.push('তথ্য খোঁজা: ' + formatSeconds(toolResultAt - startedAt) + ' সে.');
-        }
-        if (firstTokenAt !== null) {
-          parts.push('উত্তর শুরু: ' + formatSeconds(firstTokenAt - startedAt) + ' সে.');
-          parts.push('উত্তর লেখা: ' + formatSeconds(performance.now() - firstTokenAt) + ' সে.');
-        }
-        if (parts.length) timing.title = parts.join(' · ');
         break;
       }
     }
@@ -202,14 +208,6 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        /*
-         * ngrok's free tier serves a browser interstitial warning page
-         * (ERR_NGROK_6024) to any request carrying a browser User-Agent,
-         * so every API call from a real browser would get HTML back
-         * instead of JSON. This header opts out. Harmless when API_BASE
-         * is not an ngrok tunnel.
-         */
-        'ngrok-skip-browser-warning': 'true',
       },
       body: JSON.stringify({
         session_id: sessionId,
@@ -256,7 +254,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId()) {
     stickToBottom();
   }
 
-  return { text: finalReply, failed };
+  return { text: finalReply, failed, addTiming };
 }
 
 async function submit() {
@@ -302,7 +300,6 @@ resetBtn.addEventListener('click', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ session_id: sessionId }),
       });

@@ -166,6 +166,7 @@ async def asr(
         logger.warning("ASR service unreachable: %s", exc)
         raise HTTPException(status_code=502, detail="ASR service unreachable") from exc
 
+    asr_ms = (time.perf_counter() - started) * 1000
     logger.info("transcribed %d bytes -> %d chars", len(audio), len(text))
 
     if settings.ASR_DUMP_DIR:
@@ -178,10 +179,10 @@ async def asr(
             audio,
             file.filename or "audio.webm",
             text,
-            (time.perf_counter() - started) * 1000,
+            asr_ms,
         )
 
-    return AsrResponse(text=text)
+    return AsrResponse(text=text, ms=round(asr_ms))
 
 
 def _dump_clip(audio: bytes, filename: str, text: str) -> None:
