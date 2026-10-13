@@ -1,0 +1,82 @@
+/*
+ * Shown only when the reader has scrolled away from the tail. Without it,
+ * breaking the auto-follow is a hidden state: new answers arrive somewhere
+ * below the fold with nothing to say so, and no one-tap way back.
+ */
+.jump-btn {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 86px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--green-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--green-dark);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(15, 40, 30, 0.16);
+}
+.jump-btn[hidden] { display: none; }
+.jump-btn:hover { background: var(--green-soft); }
+.jump-btn svg { width: 14px; height: 14px; }
+.jump-btn.unread::after {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+.composer-input {
+  flex: 1;
+  resize: none;
+  max-height: 140px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  font: inherit;
+  font-size: 0.93rem;
+  line-height: 1.5;
+  outline: none;
+}
+.composer-input:focus { border-color: var(--green); }
+.send-btn {
+  flex: none;
+  width: 42px; height: 42px;
+  border: none; border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.send-btn:hover:not(:disabled) { background: var(--green-dark); }
+.send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.send-btn svg { width: 19px; height: 19px; }
+
+.mic-btn {
+  flex: none;
+  width: 42px; height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--green);
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.mic-btn:hover:not(:disabled) { background: var(--green-soft); }
+.mic-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mic-btn svg { width: 19px; height: 19px; }

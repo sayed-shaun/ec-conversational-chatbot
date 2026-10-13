@@ -35,6 +35,14 @@ services:
     environment:
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
+      ASR_TTS_URL: ${ASR_TTS_URL:-}
+      ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
+      ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}
+      ASR_DUMP_DIR: ${ASR_DUMP_DIR:-}
+      TRACE_DIR: ${TRACE_DIR:-}
+      TRACE_TTL_DAYS: ${TRACE_TTL_DAYS:-0}
+      TRACE_SWEEP_HOURS: ${TRACE_SWEEP_HOURS:-6}
+      TZ: ${TZ:-Asia/Dhaka}
       LLAMA_TEMPERATURE: ${LLAMA_TEMPERATURE:-0.2}
       LLAMA_THINKING: ${LLAMA_THINKING:-false}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
@@ -48,6 +56,7 @@ services:
     volumes:
       - ./static:/app/static:ro
       - chat-sessions:/data
+      - ./data/tracing:/data/tracing
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

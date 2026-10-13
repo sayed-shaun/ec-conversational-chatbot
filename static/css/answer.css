@@ -1,0 +1,102 @@
+.answer p { margin: 0 0 0.6em; }
+.answer p:last-child { margin-bottom: 0; }
+.answer ul, .answer ol { margin: 0 0 0.6em; padding-left: 1.4em; }
+/* The model writes "1." as readily as "১."; number the markers in
+   Bengali either way, since the surrounding text is Bengali. */
+.answer ol { list-style-type: bengali; }
+.answer li { margin-bottom: 0.2em; }
+.answer h3, .answer h4, .answer h5, .answer h6 {
+  margin: 0.6em 0 0.3em;
+  font-size: 1em;
+  font-weight: 700;
+}
+.answer h3:first-child, .answer h4:first-child { margin-top: 0; }
+.answer strong { font-weight: 700; }
+.answer em { font-style: italic; }
+.answer code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--green-soft);
+  border: 1px solid var(--green-line);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+}
+.row.user .answer code { background: rgba(255,255,255,0.18); border-color: transparent; }
+.answer pre {
+  background: #1e2723;
+  color: #e6efe9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0 0 0.6em;
+}
+.answer pre code { background: none; border: none; padding: 0; color: inherit; }
+/* A group heading the model wrote as a bullet: it introduces the list under
+   it, so it reads as a label rather than as another item. */
+.answer p.list-group {
+  margin: 0.7em 0 0.3em;
+  font-weight: 700;
+}
+.answer p.list-group:first-child { margin-top: 0; }
+
+/* Constructs the renderer emits that had no styling: tables, quotes,
+   thematic breaks, strikethrough, images and task items. */
+.answer table {
+  border-collapse: collapse;
+  margin: 0 0 0.6em;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.answer th, .answer td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.answer th { background: var(--green-soft); font-weight: 700; }
+.row.user .answer th, .row.user .answer td { border-color: rgba(255,255,255,0.35); }
+.row.user .answer th { background: rgba(255,255,255,0.18); }
+
+.answer blockquote {
+  margin: 0 0 0.6em;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--green-line);
+  color: var(--muted, inherit);
+}
+.row.user .answer blockquote { border-left-color: rgba(255,255,255,0.5); }
+
+.answer hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.8em 0;
+}
+.row.user .answer hr { border-top-color: rgba(255,255,255,0.35); }
+
+.answer del { text-decoration: line-through; opacity: 0.75; }
+
+.answer img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.2em 0;
+}
+
+.answer li.task { list-style: none; margin-left: -1.1em; }
+.answer li.task input { margin-right: 6px; vertical-align: middle; }
+
+.answer .katex-display { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
+.answer a { color: var(--green-dark); text-decoration: underline; }
+.row.user .answer a { color: #fff; }
+
+.retry-btn {
+  margin-top: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.retry-btn:hover { background: var(--green-soft); border-color: var(--green-line); }

@@ -24,6 +24,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.api.v1 import router as v1_router
+from src.api import trace
 from src.chatbot.checkpointer import checkpointer
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -49,6 +50,26 @@ async def sweep_expired_sessions() -> None:
             logger.exception("session sweep failed; will retry next interval")
 
 
+async def sweep_expired_traces() -> None:
+    """Periodically delete trace files past their TTL.
+
+    Separate from the session sweeper: transcripts expire in minutes of
+    idleness, recordings in days since they were written, and the two have
+    no reason to share a schedule.
+    """
+    interval = settings.TRACE_SWEEP_HOURS * 3600
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            removed = await asyncio.to_thread(trace.purge_expired)
+            if removed:
+                logger.info("removed %d expired trace file(s)", removed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("trace sweep failed; will retry next interval")
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Prepare the checkpointer, then run the sweeper for the app's lifetime.
@@ -70,19 +91,43 @@ async def lifespan(application: FastAPI):
     else:
         logger.info("session expiry off; transcripts kept until reset")
 
+    trace_sweeper = None
+    if trace.enabled() and settings.TRACE_TTL_DAYS > 0:
+        await asyncio.to_thread(trace.purge_expired)
+        trace_sweeper = asyncio.create_task(sweep_expired_traces())
+        logger.info(
+            "trace expiry on: ttl=%dd sweep=%dh",
+            settings.TRACE_TTL_DAYS,
+            settings.TRACE_SWEEP_HOURS,
+        )
+    elif trace.enabled():
+        logger.warning(
+            "tracing on with no TTL: recordings in %s are kept forever",
+            settings.TRACE_DIR,
+        )
+
     try:
         yield
     finally:
-        if sweeper is not None:
-            sweeper.cancel()
-            try:
-                await sweeper
-            except asyncio.CancelledError:
-                pass
+        for task in (sweeper, trace_sweeper):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
 
 def create_app() -> FastAPI:
-    application = FastAPI(title="EC FAQ Chatbot", version="1.0.0", lifespan=lifespan)
+    """Build the FastAPI application.
+
+    expose_headers is required for the streaming TTS route: response
+    headers are not readable by cross-origin JavaScript however permissive
+    allow_headers is, since that governs the request. Without it a browser
+    on another origin cannot read the PCM sample rate and would play the
+    stream at a guessed one.
+    """
+    application = FastAPI(title="EC Conversational Chatbot", version="1.0.0", lifespan=lifespan)
 
     origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
     application.add_middleware(
@@ -90,6 +135,7 @@ def create_app() -> FastAPI:
         allow_origins=origins,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["x-audio-sample-rate", "x-audio-channels", "x-audio-format"],
     )
 
     application.include_router(v1_router)
@@ -103,9 +149,28 @@ def create_app() -> FastAPI:
         """Convenience: bare localhost:8000 lands on the chat UI."""
         return RedirectResponse(url="/static/index.html")
 
+    class NoCacheStaticFiles(StaticFiles):
+        """StaticFiles that forbids caching of the UI.
+
+        The UI is hand-edited HTML, CSS and JS served straight off a bind
+        mount, so an edit is meant to be live on reload. Without this, browsers
+        hold the previous copy and a fix looks like it did nothing -- which
+        cost real debugging time chasing a bug that had already been fixed.
+        It is a few tens of KB from a local server; there is nothing to gain
+        by caching it.
+        """
+
+        def is_not_modified(self, *args, **kwargs) -> bool:
+            return False
+
+        async def get_response(self, path: str, scope):
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            return response
+
     application.mount(
         "/static",
-        StaticFiles(directory=settings.STATIC_DIR, html=True),
+        NoCacheStaticFiles(directory=settings.STATIC_DIR, html=True),
         name="static",
     )
 

@@ -55,6 +55,14 @@ class ChatbotSettings(BaseSettings):
     )
 
     LLAMA_TEMPERATURE: float = Field(default=0.2, ge=0.0, le=2.0)
+    ASR_TTS_URL: str = Field(default="")
+    ASR_TIMEOUT: float = Field(default=60.0)
+    ASR_LANGUAGE: str = Field(default="bn")
+    ASR_DUMP_DIR: str = Field(default="")
+    TTS_MAX_CHARS: int = Field(default=3000, ge=1)
+    TRACE_DIR: str = Field(default="")
+    TRACE_TTL_DAYS: int = Field(default=0, ge=0)
+    TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
     LLAMA_THINKING: bool = Field(
         default=False,
         description="Off sends enable_thinking=false in chat_template_kwargs (needs llama-server --jinja).",
