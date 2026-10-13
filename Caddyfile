@@ -1,4 +1,9 @@
-:80 {
+{
+	default_sni {$LAN_HOST}
+	auto_https disable_redirects
+}
+
+localhost, {$LAN_HOST}, http:// {
 	handle /asr* {
 		reverse_proxy {$ASR_URL:http://172.31.60.228:8000}
 	}

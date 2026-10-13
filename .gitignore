@@ -18,3 +18,8 @@ data/
 *.xlsx
 *.csv
 eval_data/
+
+# Certificates and keys
+*.crt
+*.key
+*.pem

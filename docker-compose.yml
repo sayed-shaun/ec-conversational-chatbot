@@ -75,11 +75,14 @@ services:
     image: caddy:2-alpine
     container_name: ec-faq-caddy
     environment:
+      LAN_HOST: ${LAN_HOST:?set LAN_HOST in .env}
       ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
     ports:
-      - "${PORT:-9100}:80"
+      - "${PORT:-9100}:443"
+      - "${HTTP_PORT:-9180}:80"
     depends_on:
       ec-faq-chatbot:
         condition: service_healthy
@@ -87,3 +90,4 @@ services:
 
 volumes:
   chat-sessions:
+  caddy-data:
