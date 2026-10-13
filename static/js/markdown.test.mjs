@@ -3,7 +3,7 @@
  *
  * markdown.js is an ES module the browser loads directly, but node treats a
  * bare .js as CommonJS unless a package.json declares otherwise -- and adding
- * one under static/ would change what Vercel builds. So the source is read and
+ * one under static/ would change what gets served. So the source is read and
  * imported as a data URL instead, which needs no configuration anywhere.
  */
 import { readFileSync } from 'node:fs';

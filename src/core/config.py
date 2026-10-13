@@ -88,7 +88,7 @@ class ChatbotSettings(BaseSettings):
         default="*",
         description=(
             "Comma-separated origins allowed to call this API cross-origin, "
-            "e.g. when the UI is hosted separately (Vercel) from this "
+            "e.g. when the UI is hosted separately from this "
             "backend. '*' allows any origin; fine here since no cookies or "
             "auth headers are used."
         ),

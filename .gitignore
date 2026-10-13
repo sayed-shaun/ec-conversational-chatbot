@@ -7,14 +7,12 @@ venv/
 build/
 dist/
 .ruff_cache/
-.vercel
 .env*
 src/mcp/tag_answer.json
 data/
 
 # Data and eval output
 *.json
-!vercel.json
 *.xlsx
 *.csv
 eval_data/

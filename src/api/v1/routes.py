@@ -210,9 +210,9 @@ async def tts(req: TtsRequest) -> Response:
     """Proxy to the TTS service, server-side.
 
     The browser calls this instead of the TTS service directly because that
-    service has no CORS support -- a UI hosted on a different origin (e.g.
-    Vercel) would have the request blocked by the browser otherwise. This
-    app's own CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
+    service has no CORS support -- a UI hosted on a different origin would
+    have the request blocked by the browser otherwise. This app's own
+    CORSMiddleware (CORS_ALLOW_ORIGINS) covers this route like any
     other.
 
     Every caller receives speakable text, not just the browser: markdown

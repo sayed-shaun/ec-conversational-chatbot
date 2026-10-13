@@ -161,8 +161,7 @@ actually touch:
 ```
 ├── main.py               # `python main.py api` | `python main.py mcp`
 ├── Caddyfile             # /asr* → ASR service, rest → chatbot
-├── vercel.json           # build step for hosting static/index.html
-├── scripts/              # load_test.py, point-alias.sh
+├── scripts/              # load_test.py
 ├── static/index.html     # chat UI: markup, styles, SSE client, one file
 └── src/
     ├── core/             # config.py (typed Settings), logger.py
@@ -180,32 +179,6 @@ actually touch:
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
 `src/api/`, so `src/chatbot/` can be used or tested without a web server.
-
-## Hosting the UI separately (Vercel)
-
-`static/index.html` is self-contained, so it can be deployed on its own while
-the backend keeps running wherever it is. Three requirements:
-
-1. **HTTPS backend.** An HTTPS page can't call an HTTP API, so put the
-   backend behind an HTTPS URL (Caddy fronts the chatbot).
-
-2. **`API_BASE` must point at the backend URL.** The file defaults to `''`
-   (same-origin), which this repo's own deployment needs. `vercel.json` patches
-   that line at build time from an `NGROK_URL` env var set in the Vercel project,
-   so the URL never lands in the repo. Redeploy when it changes.
-
-3. **CORS**: `CORS_ALLOW_ORIGINS=https://your-project.vercel.app`.
-
-The Vercel project is connected to this repo, so a push to `main` deploys and
-re-points `ec-conversational-chatbot-sit12.vercel.app` automatically.
-
-The canonical URL, **`ec-chatbot.vercel.app`**, cannot auto-update: it is the
-default subdomain of a project outside this team, so it can be aliased but not
-registered as a project domain (`vercel domains add` fails with
-`alias_conflict`). `.github/workflows/point-alias.yml` re-points it on every
-successful production deployment, so this is handled — it needs a
-`VERCEL_TOKEN` repo secret with access to the `sit12` team. Run
-`scripts/point-alias.sh` by hand if you ever need to force it.
 
 ## Using the MCP server on its own
 
@@ -274,4 +247,3 @@ identical runs) — the server flag is the dependable lever.
 | Every reply takes ~30s | Reasoning is on — restart with `--reasoning off` |
 | llama-server OOMs | A second llama.cpp competing for the same VRAM |
 | Replies are always the "call 105" fallback | llama-server unreachable at `LLAMA_BASE_URL` |
-| Vercel UI can't reach the backend | Mixed content, stale `NGROK_URL`, or `CORS_ALLOW_ORIGINS` too tight |

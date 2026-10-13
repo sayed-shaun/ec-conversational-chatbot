@@ -12,7 +12,7 @@ one-way -- api -> chatbot -> core.
   /static/index.html and its assets resolve as plain relative paths.
 - Runs a background sweeper that clears finished (idle) conversations.
 - Allows cross-origin requests from CORS_ALLOW_ORIGINS, for a UI hosted
-  separately from this API (e.g. on Vercel).
+  separately from this API (on another host).
 """
 
 import asyncio

@@ -146,7 +146,7 @@ export async function synthesizeSpeech(text, meta) {
   /*
    * Goes through our own backend (POST /api/v1/tts), not the TTS service's
    * /v1/audio/speech directly -- that service has no CORS support, so a UI
-   * hosted on a different origin (e.g. Vercel) would have the browser
+   * hosted on a different origin would have the browser
    * block the request. Our backend forwards it and inherits its own
    * CORSMiddleware instead.
    */
