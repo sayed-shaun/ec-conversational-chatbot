@@ -63,6 +63,8 @@ class ChatbotSettings(BaseSettings):
     TRACE_DIR: str = Field(default="")
     TRACE_TTL_DAYS: int = Field(default=0, ge=0)
     TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
+    ANSWER_CHECK: bool = Field(default=True)
+    ANSWER_CHECK_CANDIDATES: int = Field(default=8, ge=1)
     LLAMA_THINKING: bool = Field(
         default=False,
         description="Off sends enable_thinking=false in chat_template_kwargs (needs llama-server --jinja).",

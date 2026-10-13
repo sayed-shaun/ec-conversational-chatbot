@@ -36,7 +36,7 @@ from src.mcp.data_fetch import TAG_ANSWERS, start_refresh_thread
 logger = get_logger(__name__)
 
 NOT_FOUND_ANSWER = (
-    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "১০৫-এ কল করে সরাসরি প্রতিনিধির সাথে কথা বলুন।"
+    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
 )
 
 mcp = FastMCP(name="ec-faq-search")
@@ -68,7 +68,7 @@ def search_faq(
             match: the best must score at least `second_best * ratio` to be
             treated as confident. 1.0 (the default) demands no margin.
         handle_unknown: When the best match is not confident, replace the
-            answer with an explicit "I don't know, call 105" instead of
+            answer with an explicit "I don't know, press 0" instead of
             returning a probably-wrong answer.
         show_candidates: Include the `alternatives` list in the result.
 
@@ -144,6 +144,7 @@ def search_faq(
         "min_score_ratio": min_score_ratio,
         "runner_up_score": runner_up,
         "best_tag": best["tag"],
+        "best_question": best.get("matched_question"),
         "best_answer": best_answer,
         "best_score": best_score,
         "alternatives": enriched[1:] if show_candidates else [],

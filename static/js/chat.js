@@ -33,7 +33,7 @@ export const newTurnId = () =>
   (crypto.randomUUID ? crypto.randomUUID()
                      : String(Date.now()) + Math.random().toString(16).slice(2));
 
-const STAGE_LABELS = { faq: 'FAQ', search: 'top-k', llm: 'LLM' };
+const STAGE_LABELS = { faq: 'FAQ', search: 'top-k', llm: 'LLM', check: 'check' };
 const secs = (ms) => (ms / 1000).toFixed(2) + 's';
 
 /*

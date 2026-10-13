@@ -16,6 +16,7 @@ from typing import AsyncIterator, Dict, List
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
 from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
+from src.chatbot.verify import check_answer
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -27,7 +28,7 @@ def exact_answer(result: dict) -> str:
     """The reply for a search_faq result: the dataset's best answer, verbatim.
 
     The model is not asked to compose a final reply. An unconfident match
-    already carries the "call 105" answer (see the MCP server), and a failed
+    already carries the "press 0" answer (see the MCP server), and a failed
     search gets the generic fallback.
     """
     if not isinstance(result, dict) or result.get("error"):
@@ -92,6 +93,19 @@ class Chat:
             start += 1
         self.history = [system_msg] + rest[start:]
 
+    def _recent_user_text(self, turns: int = 3) -> str:
+        """The last few things the user said, as context for the answer check."""
+        users = [m["content"] for m in self.history if m.get("role") == "user"]
+        return "\n".join(users[-turns:])
+
+    async def _checked(self, name: str, args: dict, result: dict, message: str) -> dict:
+        """Run the answer check on a search result; other tools pass through."""
+        if name != "search_faq" or not settings.ANSWER_CHECK:
+            return result
+        return await check_answer(
+            result, args.get("question") or message, self._recent_user_text()
+        )
+
     async def save(self) -> None:
         """Trim and checkpoint the transcript."""
         self.trim()
@@ -138,6 +152,7 @@ class Chat:
                     self.session_id,
                 )
                 result = await run_tool(tool_call.function.name, args, message, params)
+                result = await self._checked(tool_call.function.name, args, result, message)
                 self.history.append(
                     {
                         "role": "tool",
@@ -287,6 +302,9 @@ class Chat:
                 tool_started = time.perf_counter()
                 result = await run_tool(tc["name"], args, message, params)
                 spent("search", tool_started)
+                check_started = time.perf_counter()
+                result = await self._checked(tc["name"], args, result, message)
+                spent("check", check_started)
                 yield {"type": "tool_result", **tool_summary(tc["name"], result)}
 
                 self.history.append(
