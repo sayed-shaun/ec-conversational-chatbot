@@ -35,6 +35,7 @@ services:
     environment:
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
       LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
+      LLAMA_TEMPERATURE: ${LLAMA_TEMPERATURE:-0.2}
       LLAMA_THINKING: ${LLAMA_THINKING:-false}
       LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp

@@ -54,6 +54,7 @@ class ChatbotSettings(BaseSettings):
         ),
     )
 
+    LLAMA_TEMPERATURE: float = Field(default=0.2, ge=0.0, le=2.0)
     LLAMA_THINKING: bool = Field(
         default=False,
         description="Off sends enable_thinking=false in chat_template_kwargs (needs llama-server --jinja).",
