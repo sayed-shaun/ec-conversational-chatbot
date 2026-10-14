@@ -108,6 +108,7 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
       stream: true,
       turn_id: (meta && meta.turnId) || null,
       session_id: (meta && meta.sessionId) || null,
+      tag: (meta && meta.tag) || '',
     }),
   });
   if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
@@ -161,6 +162,7 @@ export async function synthesizeSpeech(text, meta) {
       response_format: 'wav',
       turn_id: (meta && meta.turnId) || null,
       session_id: (meta && meta.sessionId) || null,
+      tag: (meta && meta.tag) || '',
     }),
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);

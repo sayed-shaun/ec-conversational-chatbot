@@ -574,7 +574,7 @@ const VoiceMode = {
             this.interruptPlayback = null;
           };
         },
-        traceMeta()
+        { ...traceMeta(), tag: result.tag }
       );
       if (stale()) return;
       // After a barge-in the user is already mid-sentence and listen() is
@@ -593,7 +593,7 @@ const VoiceMode = {
 
     let audioUrl;
     try {
-      audioUrl = await synthesizeSpeech(result.text, traceMeta());
+      audioUrl = await synthesizeSpeech(result.text, { ...traceMeta(), tag: result.tag });
     } catch (err) {
       if (stale()) return;
       // TTS failed (e.g. the voice server is out of GPU memory) -- still

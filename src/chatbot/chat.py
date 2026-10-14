@@ -198,6 +198,7 @@ class Chat:
         self.history.append({"role": "user", "content": message})
 
         timings: Dict[str, float] = {}
+        served_tag = ""
 
         def spent(stage: str, since: float) -> None:
             timings[stage] = timings.get(stage, 0) + (time.perf_counter() - since) * 1000
@@ -316,6 +317,9 @@ class Chat:
                 )
                 if tc["name"] == "search_faq":
                     exact = exact_answer(result)
+                    # Only an answer the search and the check both stood behind is
+                    # worth caching as speech; a decline or a model reply has no tag.
+                    served_tag = (result.get("best_tag") or "") if result.get("confident") else ""
 
             if exact is not None:
                 reply_text = exact
@@ -336,5 +340,6 @@ class Chat:
         yield {
             "type": "done",
             "reply": reply_text,
+            "tag": served_tag,
             "timings": {stage: round(ms) for stage, ms in timings.items()},
         }

@@ -80,6 +80,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId(), voice = nul
   let answerRaw = '';
   let failed = false;
   let finalReply = '';
+  let servedTag = '';
 
   const handle = (ev) => {
 
@@ -184,6 +185,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId(), voice = nul
           renderAnswer(answerEl, answerRaw);
         }
         finalReply = ev.reply || answerRaw;
+        servedTag = ev.tag || '';
 
         for (const [stage, ms] of Object.entries(ev.timings || {})) {
           stages.push([STAGE_LABELS[stage] || stage, ms]);
@@ -254,7 +256,7 @@ export async function ask(text, mode = 'text', turnId = newTurnId(), voice = nul
     stickToBottom();
   }
 
-  return { text: finalReply, failed, addTiming };
+  return { text: finalReply, failed, addTiming, tag: servedTag };
 }
 
 async function submit() {

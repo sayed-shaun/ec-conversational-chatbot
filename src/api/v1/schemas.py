@@ -67,6 +67,9 @@ class TtsRequest(BaseModel):
 
     `turn_id` ties this reply to the ASR request that prompted it, so both
     halves land in one trace record.
+
+    `tag` is the knowledge-base tag of the answer being spoken; the speech service
+    keeps the audio of tagged replies. Empty for a reply the model wrote.
     """
 
     input: str
@@ -76,6 +79,7 @@ class TtsRequest(BaseModel):
     description: str = ""
     turn_id: Optional[str] = None
     session_id: Optional[str] = None
+    tag: str = ""
 
 
 class AsrResponse(BaseModel):
