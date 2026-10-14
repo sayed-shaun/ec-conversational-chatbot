@@ -10,7 +10,7 @@ from typing import AsyncIterator, Tuple
 
 import httpx
 
-from src.core.config import chatbot_settings as settings
+from src.core.config import speech_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +21,7 @@ class TtsClient:
 
     Proxied through this app rather than letting the browser call the TTS
     host directly, so the page talks to one origin and the model host stays
-    internal -- see ASR_TTS_URL's docstring in core/config.py.
+    internal -- see SPEECH_URL's docstring in core/config.py.
     """
 
     def __init__(self, base_url: str) -> None:
@@ -38,14 +38,14 @@ class TtsClient:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/audio/speech",
-                json=self._payload(input_text, voice, response_format, description),
+                json=self.build_payload(input_text, voice, response_format, description),
             )
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "audio/wav")
             return resp.content, content_type
 
     @staticmethod
-    def _payload(
+    def build_payload(
         input_text: str, voice: str, response_format: str, description: str
     ) -> dict:
         """Build the synthesis request body.
@@ -82,7 +82,7 @@ class TtsClient:
         after 2.2s streaming versus 12.6s buffered. Generation runs about 2.7x
         faster than playback, so once playback starts it does not catch up.
         """
-        payload = self._payload(input_text, voice, "pcm", description)
+        payload = self.build_payload(input_text, voice, "pcm", description)
         payload["stream"] = True
         client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=120.0))
         try:
@@ -95,4 +95,4 @@ class TtsClient:
             await client.aclose()
 
 
-tts_client = TtsClient(settings.ASR_TTS_URL)
+tts_client = TtsClient(settings.SPEECH_URL)

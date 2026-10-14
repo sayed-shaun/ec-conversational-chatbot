@@ -48,7 +48,7 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 
 | Component | Port | Role |
 |---|---|---|
-| **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies `/asr*` to the ASR service, everything else to the chatbot |
+| **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies everything to the chatbot |
 | **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
 | **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
 | **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
@@ -104,9 +104,9 @@ in a collapsible block without polluting the answer or the stored history. The
 UI renders each tool call as a chip with its arguments, result, matched tag and
 score, and shows total turn time under each answer.
 
-**Voice input**: the UI records with `MediaRecorder` and posts to `/asr/upload`;
-Caddy proxies `/asr*` to `ASR_URL`, so the browser only talks to this stack's
-own origin.
+**Voice**: the UI records with `MediaRecorder` and posts to `/api/v1/asr`; replies
+are spoken through `/api/v1/tts`. This app forwards both to `SPEECH_URL`, so the
+browser only talks to this stack's own origin.
 
 **Load testing**: `ab`/`wrk` can't measure the SSE endpoint (they see one
 long-lived response). Use `scripts/load_test.py`:
@@ -151,7 +151,7 @@ actually touch:
 | `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `8000` | The only port published on the host |
-| `ASR_URL` | `http://172.31.60.228:8000` | Speech-to-text behind `/asr*` |
+| `SPEECH_URL` | empty | Speech service behind `/api/v1/asr` and `/api/v1/tts` |
 
 `src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
 `TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.
@@ -160,7 +160,7 @@ actually touch:
 
 ```
 ├── main.py               # `python main.py api` | `python main.py mcp`
-├── Caddyfile             # /asr* → ASR service, rest → chatbot
+├── Caddyfile             # HTTPS, everything → chatbot
 ├── scripts/              # load_test.py
 ├── static/index.html     # chat UI: markup, styles, SSE client, one file
 └── src/
@@ -220,10 +220,9 @@ questions, same build, same machine:
 | `--reasoning off` | 4/4 | 4/4 | **13.3s** |
 
 No quality loss appeared; on the hardest case it was 4.5× faster *and* better.
-Caveat: four questions is not a benchmark. `LLAMA_REASONING_EFFORT` forwards
-`reasoning_effort` per request as a softer alternative, but proved unreliable
-through the streaming path (247, 101 and 0 reasoning chunks across three
-identical runs) — the server flag is the dependable lever.
+Caveat: four questions is not a benchmark. `LLAMA_THINKING=false` makes the app
+ask for no reasoning on every request (`enable_thinking: false`), which needs
+llama-server started with `--jinja`.
 
 ## Limitations
 

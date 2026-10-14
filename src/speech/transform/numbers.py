@@ -14,11 +14,11 @@ Converting here is deterministic -- same input, same output, no model involved.
 import re
 
 BN_DIGITS = "০১২৩৪৫৬৭৮৯"
-_BN_TO_EN = {ord(c): str(i) for i, c in enumerate(BN_DIGITS)}
+BN_TO_EN = {ord(c): str(i) for i, c in enumerate(BN_DIGITS)}
 
 
 def normalize_digits(text: str) -> str:
-    return text.translate(_BN_TO_EN)
+    return text.translate(BN_TO_EN)
 
 
 BN_TWO_DIGIT = [
@@ -259,23 +259,23 @@ def digit_by_digit_english(digits: str) -> str:
     return " ".join(EN_DIGIT_WORDS[int(d)] for d in digits)
 
 
-_DATE_ORDINAL = re.compile(r"([০-৯]+|\d+)(লা|রা|শে|ঠা|ই)")
-_ORDINAL = re.compile(r"([০-৯]+|\d+)(ম|য়|র্থ|ষ্ঠ)")
-_EN_ORDINAL = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE | re.ASCII)
-_LONG_RUN = re.compile(r"[০-৯]{6,}|\d{6,}")
-_LABEL_THEN_NUM = re.compile(
+DATE_ORDINAL = re.compile(r"([০-৯]+|\d+)(লা|রা|শে|ঠা|ই)")
+ORDINAL = re.compile(r"([০-৯]+|\d+)(ম|য়|র্থ|ষ্ঠ)")
+EN_ORDINAL_PATTERN = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE | re.ASCII)
+LONG_RUN = re.compile(r"[০-৯]{6,}|\d{6,}")
+LABEL_THEN_NUM = re.compile(
     r"(নম্বর|নম্বরে|নম্বরটি|কল করে|কল করুন|হেল্পলাইন|হটলাইন)\s*([০-৯]+|\d+)"
 )
-_NUM_THEN_LABEL = re.compile(r"([০-৯]+|\d+)\s*(নম্বরে|নম্বরটি|নম্বর)")
-_EN_LABEL_THEN_NUM = re.compile(
+NUM_THEN_LABEL = re.compile(r"([০-৯]+|\d+)\s*(নম্বরে|নম্বরটি|নম্বর)")
+EN_LABEL_THEN_NUM = re.compile(
     r"\b(call|number|helpline|hotline|dial)\b\s*:?\s*([0-9]+)",
     re.IGNORECASE | re.ASCII,
 )
-_EN_NUM_BEFORE_LABEL = re.compile(
+EN_NUM_BEFORE_LABEL = re.compile(
     r"\b([0-9]+)\s*(?=is the (?:number|helpline|hotline))",
     re.IGNORECASE | re.ASCII,
 )
-_ANY_NUMBER = re.compile(r"[০-৯]+|\d+")
+ANY_NUMBER = re.compile(r"[০-৯]+|\d+")
 
 
 def numbers_for_speech(text: str, bengali: bool = True) -> str:
@@ -292,29 +292,29 @@ def numbers_for_speech(text: str, bengali: bool = True) -> str:
     """
     out = text
 
-    out = _DATE_ORDINAL.sub(
+    out = DATE_ORDINAL.sub(
         lambda m: bangla_date_ordinal(int(normalize_digits(m.group(1))), m.group(2)),
         out,
     )
-    out = _ORDINAL.sub(lambda m: bangla_ordinal(int(normalize_digits(m.group(1)))), out)
-    out = _EN_ORDINAL.sub(lambda m: english_ordinal(int(m.group(1))), out)
+    out = ORDINAL.sub(lambda m: bangla_ordinal(int(normalize_digits(m.group(1)))), out)
+    out = EN_ORDINAL_PATTERN.sub(lambda m: english_ordinal(int(m.group(1))), out)
 
-    out = _LONG_RUN.sub(lambda m: digit_by_digit(m.group(0)), out)
-    out = _LABEL_THEN_NUM.sub(
+    out = LONG_RUN.sub(lambda m: digit_by_digit(m.group(0)), out)
+    out = LABEL_THEN_NUM.sub(
         lambda m: m.group(1) + " " + digit_by_digit(m.group(2)), out
     )
-    out = _NUM_THEN_LABEL.sub(
+    out = NUM_THEN_LABEL.sub(
         lambda m: digit_by_digit(m.group(1)) + " " + m.group(2), out
     )
-    out = _EN_LABEL_THEN_NUM.sub(
+    out = EN_LABEL_THEN_NUM.sub(
         lambda m: m.group(1) + " " + digit_by_digit_english(m.group(2)), out
     )
-    out = _EN_NUM_BEFORE_LABEL.sub(
+    out = EN_NUM_BEFORE_LABEL.sub(
         lambda m: digit_by_digit_english(m.group(1)) + " ", out
     )
 
     if bengali:
-        out = _ANY_NUMBER.sub(
+        out = ANY_NUMBER.sub(
             lambda m: number_to_bangla_words(int(normalize_digits(m.group(0)))), out
         )
     return out

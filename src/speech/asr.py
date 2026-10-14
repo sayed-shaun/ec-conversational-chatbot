@@ -2,18 +2,20 @@
 
 Proxied through this app rather than called from the browser, so the page
 talks to one origin and the ASR host stays an internal detail -- see
-ASR_TTS_URL in core/config.py.
+SPEECH_URL in core/config.py.
 """
 
 import httpx
 
-from src.core.config import chatbot_settings as settings
+from src.core.config import speech_settings as settings
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+# The bot speaks and listens in Bengali only, so the hint is fixed.
+LANGUAGE = "bn"
 
-_AUDIO_MIMES = {
+AUDIO_MIMES = {
     "webm": "audio/webm",
     "mp4": "audio/mp4",
     "m4a": "audio/mp4",
@@ -23,9 +25,9 @@ _AUDIO_MIMES = {
 }
 
 
-def _audio_mime(filename: str) -> str:
+def audio_mime(filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    return _AUDIO_MIMES.get(ext, "application/octet-stream")
+    return AUDIO_MIMES.get(ext, "application/octet-stream")
 
 
 class AsrClient:
@@ -37,12 +39,9 @@ class AsrClient:
     browser already holds a Blob from MediaRecorder.
     """
 
-    def __init__(
-        self, base_url: str, timeout: float = 60.0, language: str = ""
-    ) -> None:
+    def __init__(self, base_url: str, timeout: float = 60.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.language = language
 
     async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
         """Return the transcript for one clip. Raises httpx errors on failure.
@@ -56,17 +55,15 @@ class AsrClient:
         octet-stream, so a service that dispatches its decoder on content type
         (rather than sniffing the extension) gets the Opus path right.
         """
-        data = {"language": self.language} if self.language else None
+        data = {"language": LANGUAGE}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/audio/transcriptions",
-                files={"file": (filename, audio, _audio_mime(filename))},
+                files={"file": (filename, audio, audio_mime(filename))},
                 data=data,
             )
             resp.raise_for_status()
             return resp.json().get("text", "")
 
 
-asr_client = AsrClient(
-    settings.ASR_TTS_URL, settings.ASR_TIMEOUT, settings.ASR_LANGUAGE
-)
+asr_client = AsrClient(settings.SPEECH_URL, settings.ASR_TIMEOUT)

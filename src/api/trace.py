@@ -54,37 +54,37 @@ def enabled() -> bool:
     return bool(settings.TRACE_DIR)
 
 
-def _safe_id(turn_id: str) -> str:
+def safe_id(turn_id: str) -> str:
     """Keep a client-supplied id from escaping the log directory."""
     keep = [c for c in turn_id if c.isalnum() or c in "-_"]
     return "".join(keep)[:64] or "unknown"
 
 
-_FORBIDDEN = re.compile(r'[/\\\x00-\x1f<>:"|?*]')
+FORBIDDEN = re.compile(r'[/\\\x00-\x1f<>:"|?*]')
 
-_SLUG_BYTES = 90
+SLUG_BYTES = 90
 
 
-def _slug(text: str) -> str:
+def slug(text: str) -> str:
     """Turn a question into something safe, readable and short enough.
 
     The byte budget matters because Bengali is three bytes a character in
     UTF-8: a generous character count would still overrun a filename
     component's 255-byte limit once the timestamp and id are appended.
     """
-    text = _FORBIDDEN.sub("", text or "")
+    text = FORBIDDEN.sub("", text or "")
     text = re.sub(r"\s+", "-", text.strip())
     text = re.sub(r"-{2,}", "-", text).strip("-.")
-    while len(text.encode("utf-8")) > _SLUG_BYTES:
+    while len(text.encode("utf-8")) > SLUG_BYTES:
         text = text[:-1]
     return text.strip("-.") or "no-text"
 
 
-_stems: dict = {}
-_STEMS_MAX = 2000
+stems: dict = {}
+STEMS_MAX = 2000
 
 
-def _stem(turn_id: str, question: str = None) -> str:
+def turn_stem(turn_id: str, question: str = None) -> str:
     """The filename, without extension, for this turn.
 
     Both halves of a spoken turn must agree on where to write, so stems are
@@ -97,8 +97,8 @@ def _stem(turn_id: str, question: str = None) -> str:
     the filename for exactly that case: the stem is recovered rather than
     the turn being split across two records.
     """
-    tid = _safe_id(turn_id)
-    cached = _stems.get(tid)
+    tid = safe_id(turn_id)
+    cached = stems.get(tid)
     if cached:
         return cached
 
@@ -107,18 +107,18 @@ def _stem(turn_id: str, question: str = None) -> str:
         found = glob.glob(os.path.join(settings.TRACE_DIR, f"*_{short}.json"))
         if found:
             stem = os.path.basename(sorted(found)[0])[: -len(".json")]
-            _stems[tid] = stem
+            stems[tid] = stem
             return stem
 
     stamp = f"{datetime.now(timezone.utc).astimezone():%Y-%m-%d_%H-%M-%S}"
-    stem = f"{stamp}_{_slug(question)}_{short}" if question else f"{stamp}_{short}"
-    if len(_stems) >= _STEMS_MAX:
-        _stems.clear()
-    _stems[tid] = stem
+    stem = f"{stamp}_{slug(question)}_{short}" if question else f"{stamp}_{short}"
+    if len(stems) >= STEMS_MAX:
+        stems.clear()
+    stems[tid] = stem
     return stem
 
 
-def _root(*subdirs: str) -> str:
+def trace_root(*subdirs: str) -> str:
     """Ensure the trace root (and any subdirectory) exists, and return it."""
     path = os.path.join(settings.TRACE_DIR, *subdirs)
     os.makedirs(path, exist_ok=True)
@@ -129,7 +129,7 @@ def _root(*subdirs: str) -> str:
     return path
 
 
-_ORDER = (
+ORDER = (
     "when",
     "mode",
     "took",
@@ -144,13 +144,13 @@ _ORDER = (
 )
 
 
-def _ordered(record: dict) -> dict:
-    known = {k: record[k] for k in _ORDER if k in record}
-    known.update({k: v for k, v in record.items() if k not in _ORDER})
+def ordered(record: dict) -> dict:
+    known = {k: record[k] for k in ORDER if k in record}
+    known.update({k: v for k, v in record.items() if k not in ORDER})
     return known
 
 
-def _write_atomic(path: str, data: bytes) -> None:
+def write_atomic(path: str, data: bytes) -> None:
     """Write via a temp file in the same directory, then rename.
 
     A reader tailing the log never sees a half-written record, and a crash
@@ -176,7 +176,7 @@ def _write_atomic(path: str, data: bytes) -> None:
         raise
 
 
-def _load(path: str) -> dict:
+def read_record(path: str) -> dict:
     try:
         with open(path, "rb") as handle:
             return json.loads(handle.read().decode("utf-8"))
@@ -184,13 +184,13 @@ def _load(path: str) -> dict:
         return {}
 
 
-def _save(path: str, record: dict) -> None:
-    _write_atomic(
-        path, json.dumps(_ordered(record), ensure_ascii=False, indent=2).encode()
+def write_record(path: str, record: dict) -> None:
+    write_atomic(
+        path, json.dumps(ordered(record), ensure_ascii=False, indent=2).encode()
     )
 
 
-def _when(dt: datetime = None) -> str:
+def when(dt: datetime = None) -> str:
     """A timestamp a person can read against their own clock.
 
     Local time, not UTC: the container is given TZ, so this matches the wall
@@ -202,17 +202,17 @@ def _when(dt: datetime = None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S ") + f"{offset[:3]}:{offset[3:]}"
 
 
-def _secs(ms: float) -> str:
+def secs(ms: float) -> str:
     return f"{ms / 1000:.2f} s"
 
 
-def _size(nbytes: int) -> str:
+def format_size(nbytes: int) -> str:
     if nbytes >= 1024 * 1024:
         return f"{nbytes / 1024 / 1024:.1f} MB"
     return f"{max(nbytes, 0) // 1024} KB"
 
 
-def _wav_seconds(data: bytes) -> Optional[float]:
+def wav_seconds(data: bytes) -> Optional[float]:
     """Length of a RIFF/WAVE buffer, or None if it is some other format.
 
     Duration is the thing a person actually wants to know about a clip; the
@@ -239,8 +239,8 @@ def _wav_seconds(data: bytes) -> Optional[float]:
     return None
 
 
-def _audio_entry(path: str, data: bytes, seconds: Optional[float]) -> dict:
-    entry = {"file": path, "size": _size(len(data))}
+def audio_entry(path: str, data: bytes, seconds: Optional[float]) -> dict:
+    entry = {"file": path, "size": format_size(len(data))}
     if seconds:
         entry["length"] = f"{seconds:.2f} s"
     return entry
@@ -264,19 +264,19 @@ def wav_header(pcm_bytes: int, sample_rate: int, channels: int) -> bytes:
     )
 
 
-def _touch(record: dict, turn_id: str, session_id, mode: str = None) -> dict:
+def touch(record: dict, turn_id: str, session_id, mode: str = None) -> dict:
     """Fill in the parts every record carries, whichever half arrived."""
-    record.setdefault("when", _when())
+    record.setdefault("when", when())
     if mode:
         record["mode"] = mode
     ids = record.setdefault("ids", {})
-    ids["turn"] = _safe_id(turn_id)
+    ids["turn"] = safe_id(turn_id)
     if session_id:
         ids["session"] = session_id
     return record
 
 
-def _retotal(record: dict) -> None:
+def retotal(record: dict) -> None:
     """Sum the stages into `took`.
 
     The stages run one after another -- transcribe, then answer, then speak --
@@ -306,21 +306,21 @@ def record_asr(
     if not enabled():
         return
     try:
-        root = _root()
-        stem = _stem(turn_id, text)
+        root = trace_root()
+        stem = turn_stem(turn_id, text)
         ext = os.path.splitext(filename)[1] or ".bin"
         audio_name = os.path.join("asr", f"{stem}{ext}")
-        _write_atomic(os.path.join(_root("asr"), f"{stem}{ext}"), audio)
+        write_atomic(os.path.join(trace_root("asr"), f"{stem}{ext}"), audio)
 
         path = os.path.join(root, f"{stem}.json")
-        record = _touch(_load(path), turn_id, session_id, "voice")
+        record = touch(read_record(path), turn_id, session_id, "voice")
         record["heard"] = text
-        record.setdefault("stages", {})["transcribe"] = _secs(ms)
-        record.setdefault("audio", {})["in"] = _audio_entry(
-            audio_name, audio, _wav_seconds(audio)
+        record.setdefault("stages", {})["transcribe"] = secs(ms)
+        record.setdefault("audio", {})["in"] = audio_entry(
+            audio_name, audio, wav_seconds(audio)
         )
-        _retotal(record)
-        _save(path, record)
+        retotal(record)
+        write_record(path, record)
     except OSError as exc:
         logger.warning("could not record ASR turn %s: %s", turn_id, exc)
 
@@ -345,28 +345,28 @@ def record_tts(
     if not enabled():
         return
     try:
-        root = _root()
-        stem = _stem(turn_id)
+        root = trace_root()
+        stem = turn_stem(turn_id)
         if streamed:
             body = wav_header(len(audio), sample_rate or 44100, channels or 1) + audio
         else:
             body = audio
         audio_name = os.path.join("tts", f"{stem}.wav")
-        _write_atomic(os.path.join(_root("tts"), f"{stem}.wav"), body)
+        write_atomic(os.path.join(trace_root("tts"), f"{stem}.wav"), body)
 
         path = os.path.join(root, f"{stem}.json")
-        record = _touch(_load(path), turn_id, session_id, "voice")
+        record = touch(read_record(path), turn_id, session_id, "voice")
         if text.strip() != (record.get("replied") or "").strip():
             record["spoken"] = text
         else:
             record.pop("spoken", None)
-        record.setdefault("stages", {})["speak"] = _secs(ms)
-        record.setdefault("audio", {})["out"] = _audio_entry(
-            audio_name, body, _wav_seconds(body)
+        record.setdefault("stages", {})["speak"] = secs(ms)
+        record.setdefault("audio", {})["out"] = audio_entry(
+            audio_name, body, wav_seconds(body)
         )
         record["voice"] = voice
-        _retotal(record)
-        _save(path, record)
+        retotal(record)
+        write_record(path, record)
     except OSError as exc:
         logger.warning("could not record TTS turn %s: %s", turn_id, exc)
 
@@ -392,24 +392,24 @@ def record_chat(
     if not enabled():
         return
     try:
-        root = _root()
-        stem = _stem(turn_id, question)
+        root = trace_root()
+        stem = turn_stem(turn_id, question)
         path = os.path.join(root, f"{stem}.json")
-        record = _touch(_load(path), turn_id, session_id, mode)
+        record = touch(read_record(path), turn_id, session_id, mode)
         record.setdefault("heard", question)
         record["replied"] = reply
         if record.get("spoken", "").strip() == reply.strip():
             record.pop("spoken", None)
-        record.setdefault("stages", {})["answer"] = _secs(ms)
+        record.setdefault("stages", {})["answer"] = secs(ms)
         if tools:
             record["tools"] = tools
-        _retotal(record)
-        _save(path, record)
+        retotal(record)
+        write_record(path, record)
     except OSError as exc:
         logger.warning("could not record chat turn %s: %s", turn_id, exc)
 
 
-_TTL_GLOBS = ("*.json", os.path.join("asr", "*.wav"), os.path.join("tts", "*.wav"))
+TTL_GLOBS = ("*.json", os.path.join("asr", "*.wav"), os.path.join("tts", "*.wav"))
 
 
 def purge_expired(ttl_days: int = None) -> int:
@@ -431,7 +431,7 @@ def purge_expired(ttl_days: int = None) -> int:
 
     cutoff = time.time() - ttl * 86400
     removed = 0
-    for pattern in _TTL_GLOBS:
+    for pattern in TTL_GLOBS:
         for path in glob.glob(os.path.join(settings.TRACE_DIR, pattern)):
             try:
                 if os.path.getmtime(path) < cutoff:
@@ -443,5 +443,5 @@ def purge_expired(ttl_days: int = None) -> int:
                 logger.warning("could not remove expired trace %s", path)
 
     if removed:
-        _stems.clear()
+        stems.clear()
     return removed

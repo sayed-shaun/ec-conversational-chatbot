@@ -11,24 +11,24 @@ import os
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_BASE_CONFIG = SettingsConfigDict(
+BASE_CONFIG = SettingsConfigDict(
     env_file=".env",
     env_file_encoding="utf-8",
     case_sensitive=False,
     extra="ignore",
 )
 
-_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _default_tag_answer_path() -> str:
+def default_tag_answer_path() -> str:
     """Locate tag_answer.json in a source checkout or inside the image.
 
     In the container the MCP service's files are copied to the WORKDIR, so the
     file sits beside the process; from a checkout it lives in src/mcp/.
     """
     candidates = [
-        os.path.join(_SRC_DIR, "mcp", "tag_answer.json"),
+        os.path.join(SRC_DIR, "mcp", "tag_answer.json"),
         os.path.join(os.getcwd(), "tag_answer.json"),
     ]
     for path in candidates:
@@ -40,26 +40,14 @@ def _default_tag_answer_path() -> str:
 class ChatbotSettings(BaseSettings):
     """Settings for the FastAPI chatbot backend (src/chatbot)."""
 
-    model_config = _BASE_CONFIG
+    model_config = BASE_CONFIG
 
     LLAMA_BASE_URL: str = Field(
         default="http://172.31.60.228:8080/v1",
         description="Base URL of the OpenAI-compatible llama-server API.",
     )
-    LLAMA_MODEL: str = Field(
-        default="local-model",
-        description=(
-            "Model name sent in chat-completion requests "
-            "(llama-server usually ignores it)."
-        ),
-    )
 
     LLAMA_TEMPERATURE: float = Field(default=0.2, ge=0.0, le=2.0)
-    ASR_TTS_URL: str = Field(default="")
-    ASR_TIMEOUT: float = Field(default=60.0)
-    ASR_LANGUAGE: str = Field(default="bn")
-    ASR_DUMP_DIR: str = Field(default="")
-    TTS_MAX_CHARS: int = Field(default=3000, ge=1)
     TRACE_DIR: str = Field(default="")
     TRACE_TTL_DAYS: int = Field(default=0, ge=0)
     TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
@@ -67,15 +55,9 @@ class ChatbotSettings(BaseSettings):
     ANSWER_CHECK_CANDIDATES: int = Field(default=8, ge=1)
     LLAMA_THINKING: bool = Field(
         default=False,
-        description="Off sends enable_thinking=false in chat_template_kwargs (needs llama-server --jinja).",
-    )
-    LLAMA_REASONING_EFFORT: str = Field(
-        default="",
         description=(
-            "Passed through as reasoning_effort on chat-completion requests. "
-            "Empty leaves the model's default. 'none' suppresses most of the "
-            "thinking pass, which on a reasoning model is the bulk of the "
-            "delay between a tool result and the first answer token."
+            "The one reasoning switch. Off asks the model not to think before "
+            "answering, by sending enable_thinking=false (needs llama-server --jinja)."
         ),
     )
 
@@ -143,10 +125,35 @@ class ChatbotSettings(BaseSettings):
     )
 
 
+class SpeechSettings(BaseSettings):
+    """Settings for the voice path: the speech service behind /api/v1/asr and
+    /api/v1/tts (src/speech)."""
+
+    model_config = BASE_CONFIG
+
+    SPEECH_URL: str = Field(
+        default="",
+        description=(
+            "Base URL of the speech service (/v1/audio/transcriptions and "
+            "/v1/audio/speech). The browser never calls it: this app proxies, so "
+            "the page talks to one origin and the host stays internal."
+        ),
+    )
+    ASR_TIMEOUT: float = Field(
+        default=60.0,
+        description="Seconds to wait for the speech service to transcribe one clip.",
+    )
+    TTS_MAX_CHARS: int = Field(
+        default=3000,
+        ge=1,
+        description="Longest text sent to text-to-speech; the rest is cut.",
+    )
+
+
 class McpSettings(BaseSettings):
     """Settings for the FastMCP server (src/mcp)."""
 
-    model_config = _BASE_CONFIG
+    model_config = BASE_CONFIG
 
     TOP_SIMILAR_API_URL: str = Field(
         default="http://172.31.60.228:8002/ec_bot/top_similar/",
@@ -178,7 +185,7 @@ class McpSettings(BaseSettings):
         ),
     )
     TAG_ANSWER_PATH: str = Field(
-        default_factory=_default_tag_answer_path,
+        default_factory=default_tag_answer_path,
         description="Local fallback copy of the tag -> Bengali answer JSON file.",
     )
     TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = Field(
@@ -216,4 +223,5 @@ class McpSettings(BaseSettings):
 
 
 chatbot_settings = ChatbotSettings()
+speech_settings = SpeechSettings()
 mcp_settings = McpSettings()

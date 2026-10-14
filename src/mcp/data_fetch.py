@@ -19,7 +19,7 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _fetch_tag_answers() -> dict:
+def fetch_tag_answers() -> dict:
     """Fetch the tag -> answer knowledge base from settings.TAG_ANSWER_URL.
 
     Raw GitHub URLs for a private repo need a token; pass one via
@@ -44,12 +44,12 @@ def _fetch_tag_answers() -> dict:
     return data
 
 
-def _load_local_tag_answers() -> dict:
+def load_local_tag_answers() -> dict:
     with open(settings.TAG_ANSWER_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _write_local_copy(data: dict) -> None:
+def write_local_copy(data: dict) -> None:
     try:
         with open(settings.TAG_ANSWER_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -57,7 +57,7 @@ def _write_local_copy(data: dict) -> None:
         logger.warning("could not write local fallback copy", exc_info=True)
 
 
-def _load_tag_answers() -> dict:
+def load_tag_answers() -> dict:
     """Load the knowledge base at startup: live from GitHub, with the bundled
     copy as a fallback so a network blip can't take the server down.
 
@@ -65,9 +65,9 @@ def _load_tag_answers() -> dict:
     every restart syncs the on-disk copy immediately rather than waiting for
     the next periodic refresh tick."""
     try:
-        data = _fetch_tag_answers()
+        data = fetch_tag_answers()
         logger.info("fetched %d tags from %s", len(data), settings.TAG_ANSWER_URL)
-        _write_local_copy(data)
+        write_local_copy(data)
         return data
     except Exception as exc:
         if not settings.TAG_ANSWER_ALLOW_LOCAL_FALLBACK:
@@ -79,19 +79,19 @@ def _load_tag_answers() -> dict:
             settings.TAG_ANSWER_PATH,
         )
 
-    data = _load_local_tag_answers()
+    data = load_local_tag_answers()
     logger.info("loaded %d tags from local fallback", len(data))
     return data
 
 
-TAG_ANSWERS = _load_tag_answers()
+TAG_ANSWERS = load_tag_answers()
 
 
-def _refresh_tag_answers() -> None:
+def refresh_tag_answers() -> None:
     """Re-fetch TAG_ANSWER_URL and update TAG_ANSWERS in place, also
     overwriting the local fallback copy so a later restart sees it too."""
     try:
-        data = _fetch_tag_answers()
+        data = fetch_tag_answers()
     except Exception:
         logger.warning("periodic TAG_ANSWER_URL refetch failed", exc_info=True)
         return
@@ -102,20 +102,20 @@ def _refresh_tag_answers() -> None:
     TAG_ANSWERS.clear()
     TAG_ANSWERS.update(data)
     logger.info("TAG_ANSWER_URL refreshed (%d tags)", len(data))
-    _write_local_copy(data)
+    write_local_copy(data)
 
 
-def _refresh_loop() -> None:
+def refresh_loop() -> None:
     while True:
         time.sleep(settings.TAG_ANSWER_REFRESH_SECONDS)
-        _refresh_tag_answers()
+        refresh_tag_answers()
 
 
 def start_refresh_thread() -> None:
     """Start polling for TAG_ANSWER_URL updates, if configured to."""
     if settings.TAG_ANSWER_REFRESH_SECONDS <= 0:
         return
-    threading.Thread(target=_refresh_loop, daemon=True).start()
+    threading.Thread(target=refresh_loop, daemon=True).start()
     logger.info(
         "refreshing TAG_ANSWER_URL every %ss", settings.TAG_ANSWER_REFRESH_SECONDS
     )

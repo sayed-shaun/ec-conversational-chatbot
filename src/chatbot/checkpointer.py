@@ -40,7 +40,7 @@ class SqliteCheckpointer:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
 
-    def _connect(self) -> sqlite3.Connection:
+    def open_connection(self) -> sqlite3.Connection:
         """Open a connection.
 
         A fresh one per operation: sqlite3 connections are not safe to share
@@ -55,12 +55,12 @@ class SqliteCheckpointer:
         """Create the database and schema if they do not exist yet."""
         parent = os.path.dirname(os.path.abspath(self.db_path))
         os.makedirs(parent, exist_ok=True)
-        with self._connect() as connection:
+        with self.open_connection() as connection:
             connection.execute(self.SCHEMA)
         logger.info("checkpointer ready sqlite=%s", self.db_path)
 
-    def _load(self, session_id: str) -> list[dict] | None:
-        with self._connect() as connection:
+    def read_history(self, session_id: str) -> list[dict] | None:
+        with self.open_connection() as connection:
             row = connection.execute(
                 "SELECT history FROM checkpoints WHERE session_id = ?", (session_id,)
             ).fetchone()
@@ -80,10 +80,10 @@ class SqliteCheckpointer:
             return None
         return history
 
-    def _save(self, session_id: str, history: list[dict]) -> None:
+    def write_history(self, session_id: str, history: list[dict]) -> None:
         payload = json.dumps(history, ensure_ascii=False)
         now = datetime.now(timezone.utc).isoformat()
-        with self._connect() as connection:
+        with self.open_connection() as connection:
             connection.execute(
                 """
                 INSERT INTO checkpoints (session_id, history, updated_at)
@@ -95,47 +95,47 @@ class SqliteCheckpointer:
                 (session_id, payload, now),
             )
 
-    def _delete(self, session_id: str) -> None:
-        with self._connect() as connection:
+    def remove_history(self, session_id: str) -> None:
+        with self.open_connection() as connection:
             connection.execute(
                 "DELETE FROM checkpoints WHERE session_id = ?", (session_id,)
             )
 
-    def _purge_expired(self, ttl_minutes: int) -> int:
+    def remove_expired(self, ttl_minutes: int) -> int:
         """Delete checkpoints untouched for longer than the TTL.
 
-        updated_at is always written by _save as a UTC ISO-8601 string, so
+        updated_at is always written by write_history as a UTC ISO-8601 string, so
         every row shares one format and offset; a string comparison against a
         cutoff built the same way orders correctly.
         """
         cutoff = (
             datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
         ).isoformat()
-        with self._connect() as connection:
+        with self.open_connection() as connection:
             cursor = connection.execute(
                 "DELETE FROM checkpoints WHERE updated_at < ?", (cutoff,)
             )
             return cursor.rowcount
 
-    def _count(self) -> int:
-        with self._connect() as connection:
+    def count_sessions(self) -> int:
+        with self.open_connection() as connection:
             return connection.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
     async def load(self, session_id: str) -> list[dict] | None:
         """Return a stored transcript, or None if this session is new."""
-        return await asyncio.to_thread(self._load, session_id)
+        return await asyncio.to_thread(self.read_history, session_id)
 
     async def save(self, session_id: str, history: list[dict]) -> None:
         """Persist a transcript, replacing any earlier checkpoint."""
-        await asyncio.to_thread(self._save, session_id, history)
+        await asyncio.to_thread(self.write_history, session_id, history)
 
     async def delete(self, session_id: str) -> None:
         """Drop a session's checkpoint."""
-        await asyncio.to_thread(self._delete, session_id)
+        await asyncio.to_thread(self.remove_history, session_id)
 
     async def count(self) -> int:
         """How many sessions are currently checkpointed."""
-        return await asyncio.to_thread(self._count)
+        return await asyncio.to_thread(self.count_sessions)
 
     async def purge_expired(self, ttl_minutes: int | None = None) -> int:
         """Clear finished conversations, returning how many were removed.
@@ -148,7 +148,7 @@ class SqliteCheckpointer:
         if ttl <= 0:
             return 0
 
-        removed = await asyncio.to_thread(self._purge_expired, ttl)
+        removed = await asyncio.to_thread(self.remove_expired, ttl)
         if removed:
             logger.info("purged %d session(s) idle over %d min", removed, ttl)
         return removed

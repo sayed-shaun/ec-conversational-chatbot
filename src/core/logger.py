@@ -8,10 +8,10 @@ import logging
 import os
 import sys
 
-_LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
-_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
-_configured = False
+configured = False
 
 
 def configure_logging(level: str | None = None) -> None:
@@ -21,16 +21,16 @@ def configure_logging(level: str | None = None) -> None:
     explicitly. Logs go to stderr so stdout stays clean for the MCP stdio
     transport, where stdout is the protocol channel.
     """
-    global _configured
+    global configured
 
     resolved = (level or os.getenv("LOG_LEVEL") or "INFO").upper()
 
-    if _configured:
+    if configured:
         logging.getLogger().setLevel(resolved)
         return
 
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT))
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
 
     root = logging.getLogger()
     root.handlers = [handler]
@@ -41,7 +41,7 @@ def configure_logging(level: str | None = None) -> None:
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
 
-    _configured = True
+    configured = True
 
 
 def get_logger(name: str) -> logging.Logger:

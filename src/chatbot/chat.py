@@ -93,17 +93,17 @@ class Chat:
             start += 1
         self.history = [system_msg] + rest[start:]
 
-    def _recent_user_text(self, turns: int = 3) -> str:
+    def recent_user_text(self, turns: int = 3) -> str:
         """The last few things the user said, as context for the answer check."""
         users = [m["content"] for m in self.history if m.get("role") == "user"]
         return "\n".join(users[-turns:])
 
-    async def _checked(self, name: str, args: dict, result: dict, message: str) -> dict:
+    async def checked(self, name: str, args: dict, result: dict, message: str) -> dict:
         """Run the answer check on a search result; other tools pass through."""
         if name != "search_faq" or not settings.ANSWER_CHECK:
             return result
         return await check_answer(
-            result, args.get("question") or message, self._recent_user_text()
+            result, args.get("question") or message, self.recent_user_text()
         )
 
     async def save(self) -> None:
@@ -152,7 +152,7 @@ class Chat:
                     self.session_id,
                 )
                 result = await run_tool(tool_call.function.name, args, message, params)
-                result = await self._checked(tool_call.function.name, args, result, message)
+                result = await self.checked(tool_call.function.name, args, result, message)
                 self.history.append(
                     {
                         "role": "tool",
@@ -303,7 +303,7 @@ class Chat:
                 result = await run_tool(tc["name"], args, message, params)
                 spent("search", tool_started)
                 check_started = time.perf_counter()
-                result = await self._checked(tc["name"], args, result, message)
+                result = await self.checked(tc["name"], args, result, message)
                 spent("check", check_started)
                 yield {"type": "tool_result", **tool_summary(tc["name"], result)}
 

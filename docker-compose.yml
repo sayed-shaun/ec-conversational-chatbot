@@ -14,10 +14,6 @@ services:
       TAG_ANSWER_REFRESH_SECONDS: ${TAG_ANSWER_REFRESH_SECONDS:-0}
       TAG_ANSWER_PATH: /data/tag_answer.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      MCP_TRANSPORT: http
-      MCP_HOST: 0.0.0.0
-      MCP_PORT: 9000
-      MCP_PATH: /mcp
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -34,11 +30,8 @@ services:
     container_name: ec-faq-chatbot
     environment:
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
-      LLAMA_MODEL: ${LLAMA_MODEL:-local-model}
-      ASR_TTS_URL: ${ASR_TTS_URL:-}
+      SPEECH_URL: ${SPEECH_URL:-}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
-      ASR_LANGUAGE: ${ASR_LANGUAGE:-bn}
-      ASR_DUMP_DIR: ${ASR_DUMP_DIR:-}
       TRACE_DIR: ${TRACE_DIR:-}
       TRACE_TTL_DAYS: ${TRACE_TTL_DAYS:-0}
       TRACE_SWEEP_HOURS: ${TRACE_SWEEP_HOURS:-6}
@@ -47,7 +40,6 @@ services:
       ANSWER_CHECK: ${ANSWER_CHECK:-true}
       ANSWER_CHECK_CANDIDATES: ${ANSWER_CHECK_CANDIDATES:-8}
       LLAMA_THINKING: ${LLAMA_THINKING:-false}
-      LLAMA_REASONING_EFFORT: ${LLAMA_REASONING_EFFORT:-}
       MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
@@ -76,7 +68,6 @@ services:
     container_name: ec-faq-caddy
     environment:
       LAN_HOST: ${LAN_HOST:?set LAN_HOST in .env}
-      ASR_URL: ${ASR_URL:-http://172.31.60.228:8000}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

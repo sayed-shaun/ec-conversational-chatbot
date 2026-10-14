@@ -6,10 +6,8 @@ the engine.
 """
 
 import json
-import os
 import time
 import uuid
-from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
@@ -25,7 +23,7 @@ from src.api.v1.schemas import (
     TtsRequest,
 )
 from src.chatbot.chat import Chat
-from src.core.config import chatbot_settings as settings
+from src.core.config import speech_settings
 from src.core.logger import get_logger
 from src.speech import transform
 from src.speech.asr import asr_client
@@ -64,7 +62,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     return ChatResponse(session_id=session_id, reply=reply, tag=chat.last_tag)
 
 
-def _sse(payload: dict) -> str:
+def sse(payload: dict) -> str:
     """Encode one event as a Server-Sent Events frame."""
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -83,7 +81,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     )
 
     async def events():
-        yield _sse({"type": "start", "session_id": session_id})
+        yield sse({"type": "start", "session_id": session_id})
         started = time.perf_counter()
         reply = ""
         tools: list = []
@@ -101,10 +99,10 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                             "error": event.get("error"),
                         }
                     )
-                yield _sse(event)
+                yield sse(event)
         except Exception as exc:
             logger.exception("stream turn failed session=%s", session_id)
-            yield _sse({"type": "error", "message": str(exc)})
+            yield sse({"type": "error", "message": str(exc)})
         if req.turn_id:
             trace.record_chat(
                 req.turn_id,
@@ -169,9 +167,6 @@ async def asr(
     asr_ms = (time.perf_counter() - started) * 1000
     logger.info("transcribed %d bytes -> %d chars", len(audio), len(text))
 
-    if settings.ASR_DUMP_DIR:
-        _dump_clip(audio, file.filename or "audio.webm", text)
-
     if turn_id:
         trace.record_asr(
             turn_id,
@@ -183,26 +178,6 @@ async def asr(
         )
 
     return AsrResponse(text=text, ms=round(asr_ms))
-
-
-def _dump_clip(audio: bytes, filename: str, text: str) -> None:
-    """Write one received clip and its transcript to ASR_DUMP_DIR.
-
-    Best-effort by design: a debug aid must never be able to fail the request
-    it is instrumenting, so every error here is swallowed and logged.
-    """
-    try:
-        os.makedirs(settings.ASR_DUMP_DIR, exist_ok=True)
-        ext = os.path.splitext(filename)[1] or ".bin"
-        stem = f"{datetime.now(timezone.utc):%H%M%S}-{len(audio)}b-{len(text)}c"
-        path = os.path.join(settings.ASR_DUMP_DIR, stem + ext)
-        with open(path, "wb") as handle:
-            handle.write(audio)
-        with open(os.path.join(settings.ASR_DUMP_DIR, stem + ".txt"), "w") as handle:
-            handle.write(text)
-        logger.info("dumped clip %s", path)
-    except OSError as exc:
-        logger.warning("could not dump clip: %s", exc)
 
 
 @router.post("/tts")
@@ -220,10 +195,10 @@ async def tts(req: TtsRequest) -> Response:
     the page previously, which left the endpoint reading asterisks aloud to
     anyone else.
     """
-    req.input = transform.for_speech(req.input)[: settings.TTS_MAX_CHARS]
+    req.input = transform.for_speech(req.input)[: speech_settings.TTS_MAX_CHARS]
 
     if req.stream:
-        return await _stream_tts(req)
+        return await stream_tts(req)
 
     started = time.perf_counter()
     try:
@@ -251,10 +226,10 @@ async def tts(req: TtsRequest) -> Response:
     return Response(content=audio, media_type=content_type)
 
 
-_PCM_HEADERS = ("x-audio-sample-rate", "x-audio-channels", "x-audio-format")
+PCM_HEADERS = ("x-audio-sample-rate", "x-audio-channels", "x-audio-format")
 
 
-async def _stream_tts(req: TtsRequest) -> StreamingResponse:
+async def stream_tts(req: TtsRequest) -> StreamingResponse:
     """Relay the TTS service's PCM stream straight through to the browser.
 
     The point is time-to-first-sound: the reply starts playing while the rest
@@ -286,7 +261,7 @@ async def _stream_tts(req: TtsRequest) -> StreamingResponse:
         logger.warning("TTS stream unreachable: %s", exc)
         raise HTTPException(status_code=502, detail="TTS service unreachable") from exc
 
-    headers = {k: resp.headers[k] for k in _PCM_HEADERS if k in resp.headers}
+    headers = {k: resp.headers[k] for k in PCM_HEADERS if k in resp.headers}
 
     recording = bytearray() if req.turn_id and trace.enabled() else None
     started = time.perf_counter()

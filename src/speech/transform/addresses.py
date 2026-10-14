@@ -28,12 +28,12 @@ DOMAIN_LABEL_BN = {
     "services": "সার্ভিসেস",
 }
 
-_URL = re.compile(
+URL = re.compile(
     r"(?:https?://)?\b([a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+)(?:/[^\s,।;)]*)?",
     re.ASCII,
 )
-_KNOWN_DOMAIN = re.compile(r"(?:services\.)?nidw\.gov\.bd", re.IGNORECASE | re.ASCII)
-_DOMAIN = re.compile(r"\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+\b", re.ASCII)
+KNOWN_DOMAIN = re.compile(r"(?:services\.)?nidw\.gov\.bd", re.IGNORECASE | re.ASCII)
+DOMAIN = re.compile(r"\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+\b", re.ASCII)
 
 
 # A model does not always write a host contiguously: "services. nidw. gov. bd"
@@ -49,21 +49,21 @@ _DOMAIN = re.compile(r"\b[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z]{2,})+\b", re.ASCII)
 # "the fee. then. wait" from being welded into a hostname. A host ending in
 # some other TLD is simply left as it was, which is the behaviour before this
 # repair existed.
-_TLDS = "bd|com|org|net|gov|edu|info|io|co"
-_SPACED_DOMAIN = re.compile(
-    r"\b[a-z][a-z0-9-]*(?:\s*\.\s*[a-z][a-z0-9-]*)+\s*\.\s*(?:" + _TLDS + r")\b",
+TLDS = "bd|com|org|net|gov|edu|info|io|co"
+SPACED_DOMAIN = re.compile(
+    r"\b[a-z][a-z0-9-]*(?:\s*\.\s*[a-z][a-z0-9-]*)+\s*\.\s*(?:" + TLDS + r")\b",
     re.ASCII,
 )
 
 
-def _repair_spaced_domains(text: str) -> str:
+def repair_spaced_domains(text: str) -> str:
     """Rejoin a host whose dots were written with spaces around them."""
-    return _SPACED_DOMAIN.sub(
+    return SPACED_DOMAIN.sub(
         lambda m: re.sub(r"\s*\.\s*", ".", m.group(0)), text
     )
 
 
-def _spoken_domain(match: re.Match) -> str:
+def spoken_domain(match: re.Match) -> str:
     labels = match.group(0).split(".")
     return " ডট ".join(
         DOMAIN_LABEL_BN.get(part.lower(), spell_latin(part)) for part in labels
@@ -80,13 +80,13 @@ def addresses_for_speech(text: str) -> str:
     A host written with spaces around its dots is rejoined first, since every
     pattern here expects the labels joined.
     """
-    out = _repair_spaced_domains(text)
-    out = _URL.sub(lambda m: m.group(1), out)
-    out = _KNOWN_DOMAIN.sub(SERVICE_SITE_BN, out)
-    return _DOMAIN.sub(_spoken_domain, out)
+    out = repair_spaced_domains(text)
+    out = URL.sub(lambda m: m.group(1), out)
+    out = KNOWN_DOMAIN.sub(SERVICE_SITE_BN, out)
+    return DOMAIN.sub(spoken_domain, out)
 
 
-_SITE_ECHO = re.compile(
+SITE_ECHO = re.compile(
     re.escape(SERVICE_SITE_BN) + r"\s+(?:ওয়েবসাইট|পোর্টাল|সাইট)((?:টিতে|টি|ে|য়ে)?)"
 )
 
@@ -103,4 +103,4 @@ def dedupe_site_noun(text: str) -> str:
     character to Python, so a boundary assertion after one does not mean
     what it appears to.
     """
-    return _SITE_ECHO.sub(lambda m: SERVICE_SITE_BN + m.group(1), text)
+    return SITE_ECHO.sub(lambda m: SERVICE_SITE_BN + m.group(1), text)

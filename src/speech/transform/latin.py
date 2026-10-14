@@ -274,18 +274,18 @@ def spoken_latin(text: str) -> str:
 # Dashes are excluded because they separate words rather than being words:
 # deleting the em dash in "সংযুক্ত—এটি" welds two words into one. They are
 # turned into a pause by the punctuation stage instead.
-_FOREIGN_RUN = re.compile(
+FOREIGN_RUN = re.compile(
     r"[^\s\x00-\x7F\u0980-\u09FF\u0964\u0965\u200C\u200D\u2013-\u2015]+"
 )
 
-_ACRONYM = re.compile(r"\b[A-Z]{2,6}\b", re.ASCII)
-_LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'\-]*(?:\.[A-Za-z]+)*", re.ASCII)
+ACRONYM = re.compile(r"\b[A-Z]{2,6}\b", re.ASCII)
+LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z'\-]*(?:\.[A-Za-z]+)*", re.ASCII)
 
 
-_SENTENCE_LATIN_LIMIT = 0.30
+SENTENCE_LATIN_LIMIT = 0.30
 
 
-def _foreign_share(sentence: str) -> float:
+def foreign_share(sentence: str) -> float:
     """Share of a sentence's letters that a Bangla voice cannot say."""
     letters = [c for c in sentence if c.isalpha()]
     if not letters:
@@ -300,7 +300,7 @@ def latin_for_speech(text: str) -> str:
     The caller decides this is a Bengali reply; an English answer to an
     English question keeps its English.
 
-    A sentence still more than _SENTENCE_LATIN_LIMIT Latin after spelling
+    A sentence still more than SENTENCE_LATIN_LIMIT Latin after spelling
     is dropped whole rather than stripped. Removing the English from an
     overseas address leaves a fragment that reads as an answer without
     being one; a listener who needs the address has it on screen.
@@ -309,8 +309,8 @@ def latin_for_speech(text: str) -> str:
     for sentence in SENTENCE_SPLIT.split(text):
         if not sentence:
             continue
-        spelled = _ACRONYM.sub(lambda m: spell_latin(m.group(0)), sentence)
-        if _foreign_share(spelled) >= _SENTENCE_LATIN_LIMIT:
+        spelled = ACRONYM.sub(lambda m: spell_latin(m.group(0)), sentence)
+        if foreign_share(spelled) >= SENTENCE_LATIN_LIMIT:
             continue
-        kept.append(_FOREIGN_RUN.sub("", _LATIN_RUN.sub("", spelled)))
+        kept.append(FOREIGN_RUN.sub("", LATIN_RUN.sub("", spelled)))
     return "".join(kept)

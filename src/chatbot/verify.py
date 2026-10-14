@@ -22,23 +22,24 @@ NO_MATCH_REPLY = (
     "সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
 )
 
-_PROMPT = (
+PROMPT = (
     "ব্যবহারকারীর সাম্প্রতিক কথা:\n{context}\n\n"
     "ব্যবহারকারীর পূর্ণ প্রশ্ন: {question}\n\n"
-    "নিচে তথ্যভান্ডারের কয়েকটি সংরক্ষিত প্রশ্ন ও তাদের উত্তরের শুরু। মনোযোগ দিয়ে পড়ে ঠিক কোনটি "
-    "ব্যবহারকারীর প্রশ্নের উত্তর দেয় বেছে নাও।\n"
-    "- ব্যবহারকারীর পরিস্থিতি মিলতে হবে: বিষয়, সেবার নাম, দেশে না বিদেশে, বয়স, কোন ধাপে আছেন "
-    "(আবেদনের আগে না পরে)।\n"
-    "- দেশ, শহর, সংখ্যা বা বিষয় আলাদা হলে মেলে না; শুধু শব্দ বা নামের কিছুটা মিল থাকলেই হবে না।\n"
+    "নিচে তথ্যভান্ডারের কয়েকটি সংরক্ষিত প্রশ্ন ও তাদের উত্তরের শুরু, সার্চের মিল অনুযায়ী সাজানো "
+    "(১ নম্বর সার্চের সবচেয়ে কাছের)। ঠিক কোনটি ব্যবহারকারীর প্রশ্নের উত্তর দেয় বেছে নাও।\n"
+    "- আগে দেখো ব্যবহারকারী কী করতে বা জানতে চান (কোন সেবা বা বিষয়, কী ধরনের তথ্য) — সেটি "
+    "মিলতে হবে। তারপর দেখো তাঁর বলা বিবরণ (দেশ, শহর, বয়স, সংখ্যা, ধাপ) তার সাথে বিরোধ করছে "
+    "কিনা।\n"
+    "- বিষয় বা কাজ আলাদা হলে মেলে না, বিবরণ মিললেও। আবার বিষয় মিললেও বিবরণ আলাদা হলে (অন্য "
+    "দেশ বা শহর, অন্য সংখ্যা) মেলে না। শুধু শব্দ বা নামের কিছুটা মিল থাকলেই হবে না।\n"
     "- ব্যবহারকারী যা বলেননি তা ধরে নেবে না। আগের কথা শুধু বুঝতে সাহায্য করবে, নতুন তথ্য "
     "যোগ করবে না।\n"
-    "- একাধিক মিললে যেটি বেশি নির্দিষ্টভাবে মেলে সেটি নাও।\n\n"
+    "- ১ নম্বর ঠিক মিললে সেটিই নাও। অন্যটি তখনই নাও যখন সেটি স্পষ্টভাবে বেশি ভালো মেলে।\n\n"
     "{options}\n\n"
     "শুধু একটি সংখ্যা লিখুন। কোনোটিই ঠিক না মিললে ০ লিখুন।"
 )
 
-
-_DECLINE_PROMPT = (
+DECLINE_PROMPT = (
     "তুমি বাংলাদেশ নির্বাচন কমিশনের এনআইডি ও ভোটার সেবার সহকারী। ব্যবহারকারীর প্রশ্নের সরাসরি "
     "উত্তর আমাদের তথ্যভান্ডারে নেই। নিচের প্রশ্নগুলো সবচেয়ে কাছের, কিন্তু সেগুলো ব্যবহারকারীর "
     "প্রশ্নের উত্তর নয়।\n\nব্যবহারকারীর সাম্প্রতিক কথা:\n{context}\n\n"
@@ -49,10 +50,10 @@ _DECLINE_PROMPT = (
     "০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলতে বলো। কাছের প্রশ্নের উত্তর বানিয়ে বলবে না।"
 )
 
-_BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
-def _candidates(result: dict) -> List[dict]:
+def top_candidates(result: dict) -> List[dict]:
     """Best match first, then the alternatives, each with its question and answer."""
     best = {
         "tag": result.get("best_tag"),
@@ -73,28 +74,28 @@ def _candidates(result: dict) -> List[dict]:
     return found[: settings.ANSWER_CHECK_CANDIDATES]
 
 
-def _start(answer: Optional[str], limit: int = 140) -> str:
+def start(answer: Optional[str], limit: int = 140) -> str:
     """The first part of an answer on one line, enough to tell what it is about."""
     text = " ".join((answer or "").split())
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
-def _parse(reply: str, limit: int) -> Optional[int]:
+def parse(reply: str, limit: int) -> Optional[int]:
     """The chosen number, 0 for none, or None when the reply holds no number."""
-    match = re.search(r"\d+", (reply or "").translate(_BN_DIGITS))
+    match = re.search(r"\d+", (reply or "").translate(BN_DIGITS))
     if not match:
         return None
     number = int(match.group())
     return number if 0 <= number <= limit else None
 
 
-async def _decline_reply(question: str, context: str, candidates: List[dict]) -> str:
+async def decline_reply(question: str, context: str, candidates: List[dict]) -> str:
     """A short, natural no-information reply that names what the user asked about.
 
     Falls back to the fixed sorry if the model gives nothing usable.
     """
     options = "\n".join(f"- {c['question']}" for c in candidates[:3])
-    prompt = _DECLINE_PROMPT.format(
+    prompt = DECLINE_PROMPT.format(
         context=context or question, question=question, options=options
     )
     try:
@@ -121,15 +122,15 @@ async def check_answer(result: dict, question: str, context: str) -> dict:
     """
     if not isinstance(result, dict) or result.get("error"):
         return result
-    candidates = _candidates(result)
+    candidates = top_candidates(result)
     if len(candidates) < 1:
         return result
 
     options = "\n".join(
-        f"{i}. প্রশ্ন: {c['question']}\n   উত্তরের শুরু: {_start(c['answer'])}"
+        f"{i}. প্রশ্ন: {c['question']}\n   উত্তরের শুরু: {start(c['answer'])}"
         for i, c in enumerate(candidates, 1)
     )
-    prompt = _PROMPT.format(
+    prompt = PROMPT.format(
         context=context or question, question=question, options=options
     )
     try:
@@ -140,7 +141,7 @@ async def check_answer(result: dict, question: str, context: str) -> dict:
             max_tokens=8,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
-        choice = _parse(response.choices[0].message.content, len(candidates))
+        choice = parse(response.choices[0].message.content, len(candidates))
     except Exception:
         logger.exception("answer check failed; keeping the search's best answer")
         return result
@@ -153,7 +154,7 @@ async def check_answer(result: dict, question: str, context: str) -> dict:
         return {
             **result,
             "confident": False,
-            "best_answer": await _decline_reply(question, context, candidates),
+            "best_answer": await decline_reply(question, context, candidates),
             "check": "none",
         }
 

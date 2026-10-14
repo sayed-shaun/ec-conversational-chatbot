@@ -38,7 +38,7 @@ class OpenAIClient:
         self.client = OpenAI(base_url=base_url, api_key="not-needed")
         self.async_client = AsyncOpenAI(base_url=base_url, api_key="not-needed")
 
-    def _kwargs(
+    def build_kwargs(
         self,
         messages: List[dict],
         tools: Optional[List[dict]],
@@ -52,8 +52,6 @@ class OpenAIClient:
         }
         if stream:
             kwargs["stream"] = True
-        if settings.LLAMA_REASONING_EFFORT:
-            kwargs["reasoning_effort"] = settings.LLAMA_REASONING_EFFORT
         if not settings.LLAMA_THINKING:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         if tools:
@@ -78,7 +76,7 @@ class OpenAIClient:
             len(tools or []),
         )
         completion = await self.async_client.chat.completions.create(
-            **self._kwargs(messages, tools, tool_choice, stream=False)
+            **self.build_kwargs(messages, tools, tool_choice, stream=False)
         )
         return completion.choices[0].message
 
@@ -102,7 +100,7 @@ class OpenAIClient:
             len(tools or []),
         )
         return await self.async_client.chat.completions.create(
-            **self._kwargs(messages, tools, tool_choice, stream=True)
+            **self.build_kwargs(messages, tools, tool_choice, stream=True)
         )
 
 
@@ -138,5 +136,9 @@ class McpClient:
         return await self.call_tool("search_faq", arguments)
 
 
-openai_client = OpenAIClient(settings.LLAMA_BASE_URL, settings.LLAMA_MODEL)
+# The API needs a model name in every request; llama-server serves one model
+# and ignores it.
+MODEL_NAME = "local-model"
+
+openai_client = OpenAIClient(settings.LLAMA_BASE_URL, MODEL_NAME)
 mcp_client = McpClient(settings.MCP_SERVER_URL)
