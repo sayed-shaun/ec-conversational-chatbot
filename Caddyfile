@@ -3,7 +3,7 @@
 	auto_https disable_redirects
 }
 
-localhost, {$LAN_HOST}, http:// {
+localhost, {$LAN_HOST} {
 	handle {
 		reverse_proxy ec-faq-chatbot:8000 {
 			flush_interval -1
