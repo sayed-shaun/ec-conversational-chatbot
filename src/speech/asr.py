@@ -43,8 +43,13 @@ class AsrClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    async def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
+    async def transcribe(
+        self, audio: bytes, filename: str = "audio.webm", conversation_id: str = ""
+    ) -> str:
         """Return the transcript for one clip. Raises httpx errors on failure.
+
+        `conversation_id` is sent as X-Conversation-Id, so the speech service traces
+        the clips of one chat session together instead of one by one.
 
         Uses the service's OpenAI-compatible /v1/audio/transcriptions, which
         already joins its internal segments into one utterance -- the same
@@ -61,6 +66,7 @@ class AsrClient:
                 f"{self.base_url}/v1/audio/transcriptions",
                 files={"file": (filename, audio, audio_mime(filename))},
                 data=data,
+                headers={"X-Conversation-Id": conversation_id} if conversation_id else None,
             )
             resp.raise_for_status()
             return resp.json().get("text", "")

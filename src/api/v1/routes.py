@@ -156,7 +156,9 @@ async def asr(
 
     started = time.perf_counter()
     try:
-        text = await asr_client.transcribe(audio, file.filename or "audio.webm")
+        text = await asr_client.transcribe(
+            audio, file.filename or "audio.webm", session_id
+        )
     except httpx.HTTPStatusError as exc:
         logger.warning("ASR service returned %s", exc.response.status_code)
         raise HTTPException(status_code=502, detail="ASR service error") from exc
