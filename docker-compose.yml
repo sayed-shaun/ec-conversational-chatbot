@@ -22,8 +22,8 @@ services:
       dockerfile: api.Dockerfile
     container_name: ec-faq-chatbot
     environment:
-      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-http://host.docker.internal:8080/v1}
-      SPEECH_URL: ${SPEECH_URL:-}
+      LLAMA_BASE_API: ${LLAMA_BASE_API:?set LLAMA_BASE_API in .env}
+      SPEECH_API: ${SPEECH_API:-}
       ASR_TIMEOUT: ${ASR_TIMEOUT:-60.0}
       TRACE_DIR: ${TRACE_DIR:-}
       TRACE_TTL_DAYS: ${TRACE_TTL_DAYS:-0}
@@ -33,7 +33,7 @@ services:
       ANSWER_CHECK: ${ANSWER_CHECK:-true}
       ANSWER_CHECK_CANDIDATES: ${ANSWER_CHECK_CANDIDATES:-8}
       LLAMA_THINKING: ${LLAMA_THINKING:-false}
-      MCP_SERVER_URL: http://ec-faq-mcp:9000/mcp
+      MCP_SERVER_API: http://ec-faq-mcp:9000/mcp
       MAX_HISTORY_TURNS: ${MAX_HISTORY_TURNS:-12}
       SESSION_DB_PATH: ${SESSION_DB_PATH:-/data/sessions.db}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}

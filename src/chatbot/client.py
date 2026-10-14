@@ -140,5 +140,5 @@ class McpClient:
 # and ignores it.
 MODEL_NAME = "local-model"
 
-openai_client = OpenAIClient(settings.LLAMA_BASE_URL, MODEL_NAME)
-mcp_client = McpClient(settings.MCP_SERVER_URL)
+openai_client = OpenAIClient(settings.LLAMA_BASE_API, MODEL_NAME)
+mcp_client = McpClient(settings.MCP_SERVER_API)

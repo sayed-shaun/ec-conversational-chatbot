@@ -21,7 +21,7 @@ class TtsClient:
 
     Proxied through this app rather than letting the browser call the TTS
     host directly, so the page talks to one origin and the model host stays
-    internal -- see SPEECH_URL's docstring in core/config.py.
+    internal -- see SPEECH_API's docstring in core/config.py.
     """
 
     def __init__(self, base_url: str) -> None:
@@ -95,4 +95,4 @@ class TtsClient:
             await client.aclose()
 
 
-tts_client = TtsClient(settings.SPEECH_URL)
+tts_client = TtsClient(settings.SPEECH_API)

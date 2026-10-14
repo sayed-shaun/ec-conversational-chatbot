@@ -2,7 +2,7 @@
 
 Proxied through this app rather than called from the browser, so the page
 talks to one origin and the ASR host stays an internal detail -- see
-SPEECH_URL in core/config.py.
+SPEECH_API in core/config.py.
 """
 
 import httpx
@@ -66,4 +66,4 @@ class AsrClient:
             return resp.json().get("text", "")
 
 
-asr_client = AsrClient(settings.SPEECH_URL, settings.ASR_TIMEOUT)
+asr_client = AsrClient(settings.SPEECH_API, settings.ASR_TIMEOUT)

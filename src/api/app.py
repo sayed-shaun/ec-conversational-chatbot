@@ -176,8 +176,8 @@ def create_app() -> FastAPI:
 
     logger.info(
         "chatbot app ready llama=%s mcp=%s static=%s",
-        settings.LLAMA_BASE_URL,
-        settings.MCP_SERVER_URL,
+        settings.LLAMA_BASE_API,
+        settings.MCP_SERVER_API,
         settings.STATIC_DIR,
     )
     return application

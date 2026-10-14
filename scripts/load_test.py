@@ -8,11 +8,11 @@ it), so this fires real concurrent async requests and measures per-request
 wall time, time-to-first-byte (streaming only), and error rate.
 
 Usage:
-    python scripts/load_test.py --url http://172.31.60.228:9100 \
+    python scripts/load_test.py --url <bot address> \
         --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 
     # test the non-streaming endpoint instead
-    python scripts/load_test.py --url http://172.31.60.228:9100 --no-stream
+    python scripts/load_test.py --url <bot address> --no-stream
 """
 
 import argparse
@@ -61,9 +61,7 @@ async def worker(
 
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--url", default="http://localhost:8000", help="Base URL of the chatbot API"
-    )
+    ap.add_argument("--url", required=True, help="Base URL of the chatbot API")
     ap.add_argument(
         "--concurrency", type=int, default=10, help="Number of concurrent virtual users"
     )

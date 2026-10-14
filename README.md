@@ -13,7 +13,7 @@ llama-server you already have running.
 
 **Prerequisites**
 
-- **A running llama-server** at `LLAMA_BASE_URL` (this repo doesn't run
+- **A running llama-server** at `LLAMA_BASE_API` (this repo doesn't run
   llama.cpp). Needs a tool-calling model (Qwen2.5-Instruct, Llama-3.1/3.2,
   Hermes-2-Pro, Gemma) started **with `--jinja`** — without it no `tool_calls`
   are emitted and the bot silently answers from the model instead of your data.
@@ -102,14 +102,14 @@ UI renders each tool call as a chip with its arguments, result, matched tag and
 score, and shows total turn time under each answer.
 
 **Voice**: the UI records with `MediaRecorder` and posts to `/api/v1/asr`; replies
-are spoken through `/api/v1/tts`. This app forwards both to `SPEECH_URL`, so the
+are spoken through `/api/v1/tts`. This app forwards both to `SPEECH_API`, so the
 browser only talks to this stack's own origin.
 
 **Load testing**: `ab`/`wrk` can't measure the SSE endpoint (they see one
 long-lived response). Use `scripts/load_test.py`:
 
 ```bash
-python scripts/load_test.py --url http://172.31.60.228:9100 \
+python scripts/load_test.py --url <bot address> \
     --concurrency 10 --requests 50 --message "NID কার্ডের ফি কত?"
 ```
 
@@ -236,4 +236,4 @@ llama-server started with `--jinja`.
 | MCP never healthy, chatbot won't start | Healthcheck must use `initialize`, not `ping` — already fixed in `docker-compose.yml` |
 | Every reply takes ~30s | Reasoning is on — restart with `--reasoning off` |
 | llama-server OOMs | A second llama.cpp competing for the same VRAM |
-| Replies are always the "call 105" fallback | llama-server unreachable at `LLAMA_BASE_URL` |
+| Replies are always the "call 105" fallback | llama-server unreachable at `LLAMA_BASE_API` |

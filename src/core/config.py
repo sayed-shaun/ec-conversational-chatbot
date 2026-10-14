@@ -21,9 +21,9 @@ class ChatbotSettings(BaseSettings):
 
     model_config = BASE_CONFIG
 
-    LLAMA_BASE_URL: str = Field(
-        default="http://172.31.60.228:8080/v1",
-        description="Base URL of the OpenAI-compatible llama-server API.",
+    LLAMA_BASE_API: str = Field(
+        default="",
+        description="OpenAI-compatible llama-server API. Set in .env; required.",
     )
 
     LLAMA_TEMPERATURE: float = Field(default=0.2, ge=0.0, le=2.0)
@@ -40,9 +40,9 @@ class ChatbotSettings(BaseSettings):
         ),
     )
 
-    MCP_SERVER_URL: str = Field(
+    MCP_SERVER_API: str = Field(
         default="http://ec-faq-mcp:9000/mcp",
-        description="Streamable HTTP endpoint of the EC FAQ MCP server.",
+        description="Streamable HTTP endpoint of the MCP server, inside the Docker network.",
     )
 
     CORS_ALLOW_ORIGINS: str = Field(
@@ -110,7 +110,7 @@ class SpeechSettings(BaseSettings):
 
     model_config = BASE_CONFIG
 
-    SPEECH_URL: str = Field(
+    SPEECH_API: str = Field(
         default="",
         description=(
             "Base URL of the speech service (/v1/audio/transcriptions and "
