@@ -43,7 +43,7 @@ services:
     volumes:
       - ./static:/app/static:ro
       - chat-sessions:/data
-      - ./data/tracing:/data/tracing
+      - ./.tracing:/data/tracing
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

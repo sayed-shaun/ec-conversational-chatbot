@@ -6,9 +6,9 @@ same `turn_id` and this module joins them into one record.
 
 Each turn becomes three files under a date-stamped directory:
 
-    data/tracing/<name>.json     question, reply, timings, sizes
-    data/tracing/asr/<name>.wav  what the microphone uploaded (voice only)
-    data/tracing/tts/<name>.wav  what was played back (voice only)
+    .tracing/<name>.json     question, reply, timings, sizes
+    .tracing/asr/<name>.wav  what the microphone uploaded (voice only)
+    .tracing/tts/<name>.wav  what was played back (voice only)
 
 where <name> is `<timestamp>_<question>_<short id>`, e.g.
 

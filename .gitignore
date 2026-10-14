@@ -8,7 +8,7 @@ build/
 dist/
 .ruff_cache/
 .env*
-data/
+.tracing/
 
 # Data and eval output
 *.json
