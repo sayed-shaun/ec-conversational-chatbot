@@ -20,16 +20,14 @@ llama-server you already have running.
   Add **`--reasoning off`** too; it cuts turn time from ~31s to ~13s
   ([details](#performance)). Don't run a second llama.cpp on the same GPU — both
   will fight for VRAM.
-- **A `GITHUB_TOKEN`** — a PAT with read access to the private knowledge-base
-  repo. `tag_answer.json` is fetched from `TAG_ANSWER_URL` at startup; a valid
-  token logs `fetched 1374 tags` on boot.
-- **The `top_similar` embedding API**, returning `input_question` and
-  `top_similar[].{tag, cosine_similarity}`.
+- **The top-k search API** (`TOPK_API`), returning `input_question` and
+  `top_similar[].{question, tag, answer, cosine_similarity}`. The answers come
+  from it, so there is no separate answer file or token to manage.
 
 **Run**
 
 ```bash
-cp .env.example .env      # set LLAMA_BASE_URL, TOP_SIMILAR_API_URL, GITHUB_TOKEN
+cp .env.example .env      # set LLAMA_BASE_API, TOPK_API, SPEECH_API
 docker compose up --build
 ```
 
@@ -51,8 +49,8 @@ gated by compose, so until it's up chat requests return the "call 105" fallback.
 | **`caddy`** | `${PORT}` → `:80` | The only port published on the host; proxies everything to the chatbot |
 | **`ec-faq-chatbot`** | `:8000` internal | FastAPI: session memory, the tool-calling loop, static chat UI |
 | **`ec-faq-mcp`** | `:9000` internal | [FastMCP](https://gofastmcp.com) server exposing one tool, `search_faq` |
-| **your llama-server** | `:8080` | Runs your GGUF model, serves `/v1/chat/completions` |
-| **your `top_similar` API** | `:8002` | Embedding search over the FAQ questions |
+| **your llama-server** | set by `LLAMA_BASE_API` | Runs your GGUF model, serves `/v1/chat/completions` |
+| **the top-k search API** | set by `TOPK_API` | Embedding search over the FAQ questions (`/api/v1/topk`) |
 
 ```mermaid
 flowchart LR
@@ -60,8 +58,7 @@ flowchart LR
     CADDY --> BOT["ec-faq-chatbot<br/>tool-calling loop"]
     BOT <-->|"/v1/chat/completions<br/>+ search_faq schema"| LLM["llama-server"]
     BOT -->|"model asked for search_faq"| MCP["ec-faq-mcp"]
-    MCP --> SIM["top_similar API"]
-    MCP --> TAG[("tag_answer.json")]
+    MCP --> SIM["top-k API<br/>(questions + answers)"]
     MCP -.->|"best answer + confident"| BOT
     BOT --> DB[("SQLite<br/>transcripts")]
 ```
@@ -72,7 +69,7 @@ MCP server: it only *asks* for `search_faq` in a `tool_calls` response, and
 and calls llama-server again — up to `MAX_TOOL_HOPS` times.
 
 The model decides whether a question needs a lookup. If it does, `search_faq`
-queries `top_similar`, de-duplicates by `tag`, resolves each tag to its answer,
+queries the top-k API, de-duplicates by `tag`, resolves each tag to its answer,
 and returns the best one with a confidence flag and alternatives. Below
 `CONFIDENCE_THRESHOLD` the system prompt tells the model to admit it doesn't
 know. Small talk skips the tool. Everything, tool calls included, stays in the
@@ -136,25 +133,20 @@ The UI sends a `params` object per request. `top_k` is forwarded to
 Every variable is typed and validated in `src/core/config.py`
 (`chatbot_settings`, `mcp_settings`) via `pydantic-settings`. Process env wins,
 then `.env`, then the defaults in that file. Names map case-insensitively
-(`top_similar_api_url` ↔ `TOP_SIMILAR_API_URL`), so no Python edits are needed
+(`topk_api` ↔ `TOPK_API`), so no Python edits are needed
 to change a setting. `.env.example` documents the full list; the ones you'll
 actually touch:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLAMA_BASE_URL` | `http://host.docker.internal:8080/v1` | Your llama-server |
-| `TOP_SIMILAR_API_URL` | `…:8002/ec_bot/top_similar/` | Embedding search API |
-| `GITHUB_TOKEN` | *(unset)* | PAT for the knowledge-base repo |
+| `LLAMA_BASE_API` | required | Your llama-server (`…/v1`) |
+| `TOPK_API` | required | Embedding search API; also supplies the answers |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `12` | Past turns kept per session (turn-count, not tokens) |
 | `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
-| `TAG_ANSWER_REFRESH_SECONDS` | `43200` | Re-fetch interval; `0` = once at startup |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `8000` | The only port published on the host |
-| `SPEECH_URL` | empty | Speech service behind `/api/v1/asr` and `/api/v1/tts` |
-
-`src/mcp/tag_answer.json` is a snapshot used only if the live fetch fails; set
-`TAG_ANSWER_ALLOW_LOCAL_FALLBACK=false` to fail startup loudly instead.
+| `SPEECH_API` | empty | Speech service behind `/api/v1/asr` and `/api/v1/tts` |
 
 ## Repo layout
 
@@ -174,7 +166,7 @@ actually touch:
     │   ├── client.py     # OpenAIClient (llama-server) + McpClient
     │   ├── prompt.py     # system prompt and canned replies (Bengali)
     │   └── tools.py      # tool catalogue, dispatch, result summary
-    └── mcp/              # server.py (search_faq) + tag_answer.json fallback
+    └── mcp/              # server.py (search_faq)
 ```
 
 Dependencies run one way: `api → chatbot → core`. FastAPI is imported only under
@@ -201,7 +193,7 @@ PY
 
 `src/mcp/server.py` also speaks stdio, so it runs as a local MCP server for
 Claude Desktop / Claude Code — `pip install ".[mcp]"`, then set
-`MCP_TRANSPORT=stdio` and `TOP_SIMILAR_API_URL` in the client's server config
+`MCP_TRANSPORT=stdio` and `TOPK_API` in the client's server config
 with `command: python`, `args: ["main.py", "mcp"]`.
 
 ## Performance
@@ -242,7 +234,6 @@ llama-server started with `--jinja`.
 |---|---|
 | Answers ignore your FAQ data | llama-server started without `--jinja`, so no `tool_calls` |
 | MCP never healthy, chatbot won't start | Healthcheck must use `initialize`, not `ping` — already fixed in `docker-compose.yml` |
-| Logs fall back to the bundled `tag_answer.json` | `GITHUB_TOKEN` missing or lacking read access |
 | Every reply takes ~30s | Reasoning is on — restart with `--reasoning off` |
 | llama-server OOMs | A second llama.cpp competing for the same VRAM |
 | Replies are always the "call 105" fallback | llama-server unreachable at `LLAMA_BASE_URL` |

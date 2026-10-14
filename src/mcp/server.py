@@ -3,24 +3,19 @@ EC FAQ MCP Server (built with FastMCP: https://github.com/jlowin/fastmcp)
 --------------------------------------------------------------------------
 Exposes a single MCP tool, `search_faq`, that:
 
-  1. Sends the user's question to the external `top_similar` embedding-search
-     API (your existing service, e.g. http://<host>:8002) and gets back the
-     top_k nearest questions with their `tag` and `cosine_similarity`.
-  2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag).
-  3. Looks up the canonical Bengali answer for each unique tag in
-     `tag_answer.json`.
-  4. Returns a compact, ready-to-use payload: the single best answer plus a
+  1. Sends the user's question to the external top-k embedding-search API
+     (TOPK_API, e.g. http://<host>:8888/api/v1/topk). It returns the nearest
+     FAQ questions, each with its `tag`, `cosine_similarity` and the tag's
+     canonical Bengali `answer`.
+  2. De-duplicates results by `tag` (keeping the highest-ranked hit per tag)
+     and leaves out tags the API has no answer for.
+  3. Returns a compact, ready-to-use payload: the single best answer plus a
      list of alternatives, so the calling LLM doesn't have to guess.
 
 Served over Streamable HTTP at `/mcp` so it's reachable from other
 containers (e.g. the chatbot service) as well as from any MCP client
 (Claude Desktop, Claude Code, Cursor, etc.) that supports HTTP transport.
 For local stdio use instead, set MCP_TRANSPORT=stdio.
-
-The knowledge base is fetched live from GitHub at startup and optionally
-kept fresh on an interval (see data_fetch.py: TAG_ANSWER_URL, GITHUB_TOKEN,
-TAG_ANSWER_REFRESH_SECONDS), falling back to the bundled tag_answer.json
-if the live fetch fails.
 
 All configuration lives in src/core/config.py (Settings, pydantic-settings) —
 see that file for every available environment variable.
@@ -31,7 +26,6 @@ from fastmcp import FastMCP
 
 from src.core.config import mcp_settings as settings
 from src.core.logger import get_logger
-from src.mcp.data_fetch import TAG_ANSWERS, start_refresh_thread
 
 logger = get_logger(__name__)
 
@@ -84,42 +78,53 @@ def search_faq(
     """
     try:
         response = requests.post(
-            settings.TOP_SIMILAR_API_URL,
-            json={"question": question, "top_k": top_k},
-            timeout=settings.TOP_SIMILAR_TIMEOUT,
+            settings.TOPK_API,
+            json={"question": question, "top_k": settings.TOPK_ROWS},
+            timeout=settings.TOPK_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as exc:
         return {
-            "error": f"top_similar API unreachable or errored: {exc}",
+            "error": f"top-k API unreachable or errored: {exc}",
             "input_question": question,
         }
 
     matches = data.get("top_similar", [])
     if not matches:
         return {
-            "error": "no matches returned by top_similar API",
+            "error": "no matches returned by the top-k API",
             "input_question": data.get("input_question", question),
         }
 
-    seen_tags = set()
-    unique_matches = []
+    # One entry per tag, best-ranked first. The answer comes with the rows; a tag's
+    # rows can disagree on whether it has one, so take the first row that does.
+    # A tag with no answer anywhere cannot be served and is left out.
+    by_tag: dict = {}
     for match in matches:
         tag = match.get("tag")
-        if tag and tag not in seen_tags:
-            seen_tags.add(tag)
-            unique_matches.append(match)
-
-    enriched = [
-        {
-            "tag": match["tag"],
-            "matched_question": match.get("question"),
-            "cosine_similarity": match.get("cosine_similarity"),
-            "answer": TAG_ANSWERS.get(match["tag"], NOT_FOUND_ANSWER),
+        if not tag:
+            continue
+        entry = by_tag.setdefault(
+            tag,
+            {
+                "tag": tag,
+                "matched_question": match.get("question"),
+                "cosine_similarity": match.get("cosine_similarity"),
+                "answer": None,
+            },
+        )
+        if not entry["answer"] and match.get("answer"):
+            entry["answer"] = match["answer"]
+    enriched = [e for e in by_tag.values() if e["answer"]][:top_k]
+    skipped = len(by_tag) - len([e for e in by_tag.values() if e["answer"]])
+    if skipped:
+        logger.info("skipped %d tag(s) the API has no answer for", skipped)
+    if not enriched:
+        return {
+            "error": "the top-k API returned no tag with an answer",
+            "input_question": data.get("input_question", question),
         }
-        for match in unique_matches
-    ]
 
     best = enriched[0]
     best_score = best.get("cosine_similarity") or 0.0
@@ -153,24 +158,21 @@ def search_faq(
 
 @mcp.tool
 def health() -> dict:
-    """Basic liveness check for this MCP server, including whether
-    tag_answer.json loaded correctly."""
-    return {"status": "ok", "tag_count": len(TAG_ANSWERS)}
+    """Basic liveness check for this MCP server."""
+    return {"status": "ok"}
 
 
 def main() -> None:
     """Run the MCP server over the transport selected by MCP_TRANSPORT."""
-    start_refresh_thread()
     if settings.MCP_TRANSPORT == "stdio":
-        logger.info("starting MCP server on stdio tags=%d", len(TAG_ANSWERS))
+        logger.info("starting MCP server on stdio")
         mcp.run(transport="stdio")
     else:
         logger.info(
-            "starting MCP server http://%s:%s%s tags=%d",
+            "starting MCP server http://%s:%s%s",
             settings.MCP_HOST,
             settings.MCP_PORT,
             settings.MCP_PATH,
-            len(TAG_ANSWERS),
         )
         mcp.run(
             transport="http",

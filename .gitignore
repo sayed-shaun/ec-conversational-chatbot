@@ -8,7 +8,6 @@ build/
 dist/
 .ruff_cache/
 .env*
-src/mcp/tag_answer.json
 data/
 
 # Data and eval output

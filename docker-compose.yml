@@ -6,16 +6,9 @@ services:
       dockerfile: mcp.Dockerfile
     container_name: ec-faq-mcp
     environment:
-      TOP_SIMILAR_API_URL: ${TOP_SIMILAR_API_URL:-http://172.31.60.228:8002/ec_bot/top_similar/}
+      TOPK_API: ${TOPK_API:?set TOPK_API in .env}
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.55}
-      TAG_ANSWER_URL: ${TAG_ANSWER_URL:-https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/development/full_dataset/tag_answer.json}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      TAG_ANSWER_ALLOW_LOCAL_FALLBACK: ${TAG_ANSWER_ALLOW_LOCAL_FALLBACK:-true}
-      TAG_ANSWER_REFRESH_SECONDS: ${TAG_ANSWER_REFRESH_SECONDS:-0}
-      TAG_ANSWER_PATH: /data/tag_answer.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    volumes:
-      - ./data:/data
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-fsS", "-X", "POST", "http://localhost:9000/mcp", "-H", "Content-Type: application/json", "-H", "Accept: application/json, text/event-stream", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1\"}}}" ]

@@ -6,8 +6,6 @@ os.getenv directly, so every knob is declared, typed, and validated in
 one place.
 """
 
-import os
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,25 +15,6 @@ BASE_CONFIG = SettingsConfigDict(
     case_sensitive=False,
     extra="ignore",
 )
-
-SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def default_tag_answer_path() -> str:
-    """Locate tag_answer.json in a source checkout or inside the image.
-
-    In the container the MCP service's files are copied to the WORKDIR, so the
-    file sits beside the process; from a checkout it lives in src/mcp/.
-    """
-    candidates = [
-        os.path.join(SRC_DIR, "mcp", "tag_answer.json"),
-        os.path.join(os.getcwd(), "tag_answer.json"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return candidates[0]
-
 
 class ChatbotSettings(BaseSettings):
     """Settings for the FastAPI chatbot backend (src/chatbot)."""
@@ -155,52 +134,24 @@ class McpSettings(BaseSettings):
 
     model_config = BASE_CONFIG
 
-    TOP_SIMILAR_API_URL: str = Field(
-        default="http://172.31.60.228:8002/ec_bot/top_similar/",
-        description=(
-            "POST endpoint returning top-k similar questions "
-            "with tag + cosine_similarity."
-        ),
-    )
-    TOP_SIMILAR_TIMEOUT: float = Field(
-        default=10.0,
-        description="Timeout in seconds for calls to TOP_SIMILAR_API_URL.",
-    )
-
-    TAG_ANSWER_URL: str = Field(
-        default=(
-            "https://raw.githubusercontent.com/Synesis-IT-PLC/ec-faq-bot/"
-            "development/full_dataset/tag_answer.json"
-        ),
-        description="Raw URL of the tag -> answer JSON, fetched at startup.",
-    )
-    TAG_ANSWER_URL_TIMEOUT: float = Field(
-        default=15.0,
-        description="Timeout in seconds for the startup fetch of TAG_ANSWER_URL.",
-    )
-    GITHUB_TOKEN: str = Field(
+    TOPK_API: str = Field(
         default="",
         description=(
-            "GitHub token for TAG_ANSWER_URL; required while the repo is private."
+            "POST endpoint returning the nearest FAQ questions, each with its "
+            "tag, cosine_similarity and the tag's answer. Set in .env; required."
         ),
     )
-    TAG_ANSWER_PATH: str = Field(
-        default_factory=default_tag_answer_path,
-        description="Local fallback copy of the tag -> Bengali answer JSON file.",
+    TOPK_TIMEOUT: float = Field(
+        default=10.0,
+        description="Timeout in seconds for calls to TOPK_API.",
     )
-    TAG_ANSWER_ALLOW_LOCAL_FALLBACK: bool = Field(
-        default=True,
+    TOPK_ROWS: int = Field(
+        default=100,
+        ge=1,
+        le=100,
         description=(
-            "If the live fetch fails, load TAG_ANSWER_PATH "
-            "instead of failing startup."
-        ),
-    )
-    TAG_ANSWER_REFRESH_SECONDS: float = Field(
-        default=0.0,
-        ge=0.0,
-        description=(
-            "Re-fetch TAG_ANSWER_URL on this interval so GitHub-side edits "
-            "reach a running server without a restart. 0 disables polling."
+            "Questions asked of TOPK_API per search. Many questions share a tag, "
+            "so a large number is needed to see enough distinct tags."
         ),
     )
     CONFIDENCE_THRESHOLD: float = Field(

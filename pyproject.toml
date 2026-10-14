@@ -21,7 +21,7 @@ chatbot = [
     "openai>=1.35.0",
     "httpx>=0.27.0",
 ]
-# MCP server: FastMCP tool over the top_similar embedding API.
+# MCP server: FastMCP tool over the top-k embedding API.
 mcp = [
     "requests>=2.31.0",
 ]
@@ -35,8 +35,6 @@ ec-faq-mcp = "src.mcp.server:main"
 [tool.setuptools]
 packages = ["src", "src.core", "src.api", "src.api.v1", "src.chatbot", "src.mcp"]
 
-[tool.setuptools.package-data]
-"src.mcp" = ["tag_answer.json"]
 
 [tool.ruff]
 line-length = 88
