@@ -59,7 +59,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
             (time.perf_counter() - started) * 1000,
         )
 
-    return ChatResponse(session_id=session_id, reply=reply, tag=chat.last_tag)
+    return ChatResponse(
+        session_id=session_id, reply=reply, tag=chat.last_tag, ended=chat.ended
+    )
 
 
 def sse(payload: dict) -> str:

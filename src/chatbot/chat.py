@@ -43,6 +43,7 @@ class Chat:
         self.session_id = session_id
         self.history = history
         self.last_tag = ""
+        self.ended = False
 
     @staticmethod
     def new_history() -> List[dict]:
@@ -101,8 +102,15 @@ class Chat:
         )
 
     async def save(self) -> None:
-        """Trim and checkpoint the transcript."""
+        """Checkpoint the transcript, or end the chat when it has used up its
+        MAX_HISTORY_TURNS questions: the stored history is deleted and `ended`
+        tells the caller to start the next question as a new session."""
         self.trim()
+        asked = sum(1 for m in self.history if m.get("role") == "user")
+        if asked >= settings.MAX_HISTORY_TURNS:
+            self.ended = True
+            await checkpointer.delete(self.session_id)
+            return
         await checkpointer.save(self.session_id, self.history)
 
     async def send(self, message: str, params: dict | None = None) -> str:
@@ -335,5 +343,6 @@ class Chat:
             "type": "done",
             "reply": reply_text,
             "tag": served_tag,
+            "ended": self.ended,
             "timings": {stage: round(ms) for stage, ms in timings.items()},
         }

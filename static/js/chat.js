@@ -9,7 +9,17 @@ import { el } from './dom.js';
 import { addRow, addUserMessage, stickToBottom } from './transcript.js';
 import { renderAnswer } from './answer.js';
 
-let sessionId = localStorage.getItem('ec_conversational_session_id') || null;
+// The session lives only in this page's memory: a refresh or a closed tab
+// forgets it, so the next visit starts a fresh conversation.
+let sessionId = null;
+try {
+  localStorage.removeItem('ec_conversational_session_id');
+} catch (e) {
+
+}
+
+const CHAT_CLOSED_MESSAGE =
+  'প্রশ্নের সর্বোচ্চ সীমায় পৌঁছানোয় এই চ্যাটটি বন্ধ হয়েছে এবং আগের কথোপকথন মুছে ফেলা হয়েছে। নতুন প্রশ্ন করলে নতুন চ্যাট শুরু হবে।';
 
 // Read-only view for voice mode, which tags its ASR and TTS calls with the
 // session they belong to (see src/chatbot/trace.py).
@@ -87,7 +97,6 @@ export async function ask(text, mode = 'text', turnId = newTurnId(), voice = nul
     switch (ev.type) {
       case 'start':
         sessionId = ev.session_id;
-        localStorage.setItem('ec_conversational_session_id', sessionId);
         break;
 
       case 'reasoning':
@@ -191,6 +200,12 @@ export async function ask(text, mode = 'text', turnId = newTurnId(), voice = nul
           stages.push([STAGE_LABELS[stage] || stage, ms]);
         }
         renderTiming();
+
+        // The server used up this chat's question limit and deleted its history.
+        if (ev.ended) {
+          sessionId = null;
+          addRow('bot').textContent = CHAT_CLOSED_MESSAGE;
+        }
 
         break;
       }
@@ -312,6 +327,16 @@ resetBtn.addEventListener('click', async () => {
   messagesEl.innerHTML = '';
   greet();
   inputEl.focus();
+});
+
+// Leaving the page (refresh, close, navigate away) ends the chat, so ask the
+// server to drop its copy of the transcript instead of waiting for the idle TTL.
+window.addEventListener('pagehide', () => {
+  if (!sessionId) return;
+  const body = new Blob([JSON.stringify({ session_id: sessionId })], {
+    type: 'application/json',
+  });
+  navigator.sendBeacon(API_BASE + '/api/v1/reset', body);
 });
 
 export function greet() {

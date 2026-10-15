@@ -49,6 +49,7 @@ class ChatResponse(BaseModel):
     session_id: str
     reply: str
     tag: Optional[str] = None
+    ended: bool = False
 
 
 class ResetResponse(BaseModel):
