@@ -1,13 +1,14 @@
-"""Web addresses, said rather than dictated.
+"""Web addresses, said as their parts.
 
 A spoken address is only useful as far as the host: reading a path aloud
 gives a listener nothing they can act on, and the path is where Latin
-letters survive every other rule.
+letters survive every other rule. The host is read label by label with
+"ডট" between, so services.nidw.gov.bd is said "সার্ভিসেস ডট এনআইডব্লিউ ডট
+গভ ডট বিডি". Only speech is affected; the on-screen reply keeps the real URL,
+as this module runs on the way to TTS and nowhere else.
 
-SERVICE_SITE_BN names the one address in the knowledge base instead of
-spelling it out, which would be thirteen syllables of dictation. Only
-speech is affected; the on-screen reply keeps the real URL, as this
-module runs on the way to TTS and nowhere else.
+SERVICE_SITE_BN, KNOWN_DOMAIN and dedupe_site_noun are the older way: naming
+that one address "এনআইডি সেবার ওয়েবসাইট" instead. Nothing applies them now.
 """
 
 import re
@@ -18,7 +19,7 @@ SERVICE_SITE_BN = "এনআইডি সেবার ওয়েবসাই�
 
 DOMAIN_LABEL_BN = {
     "www": "ডাব্লিউ ডাব্লিউ ডাব্লিউ",
-    "nidw": "এনআইডিডাব্লিউ",
+    "nidw": "এনআইডব্লিউ",
     "gov": "গভ",
     "bd": "বিডি",
     "com": "কম",
@@ -71,23 +72,29 @@ def spoken_domain(match: re.Match) -> str:
 
 
 def addresses_for_speech(text: str) -> str:
-    """Strip paths, name the known site, break other hosts on their dots.
+    """Strip paths and say each host label by label, joined with "ডট".
 
-    Unknown hosts have each label translated via DOMAIN_LABEL_BN or spelled
-    out, so a bare nidw.gov.bd is not left half in Latin for the voice to
-    trip over.
+    Each label is translated via DOMAIN_LABEL_BN or spelled out, so a host is
+    never left half in Latin for the voice to trip over.
 
     A host written with spaces around its dots is rejoined first, since every
     pattern here expects the labels joined.
     """
     out = repair_spaced_domains(text)
     out = URL.sub(lambda m: m.group(1), out)
-    out = KNOWN_DOMAIN.sub(SERVICE_SITE_BN, out)
     return DOMAIN.sub(spoken_domain, out)
 
 
+# "য়" is one character (U+09DF) in some text and two (য + nukta) in other, and the
+# two look the same, so a pattern written one way silently misses the other.
+YA = "(?:\u09df|\u09af\u09bc)"
 SITE_ECHO = re.compile(
-    re.escape(SERVICE_SITE_BN) + r"\s+(?:ওয়েবসাইট|পোর্টাল|সাইট)((?:টিতে|টি|ে|য়ে)?)"
+    re.escape(SERVICE_SITE_BN)
+    + r"\s+(?:ও"
+    + YA
+    + r"েবসাইট|পোর্টাল|সাইট)((?:টিতে|টি|ে|"
+    + YA
+    + r"ে)?)"
 )
 
 
