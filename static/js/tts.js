@@ -9,6 +9,56 @@
 import { API_BASE } from './config.js';
 
 /*
+ * A noise gate for one stream. The service's output has a flat hiss of about
+ * -40 dBFS in every pause and between words, while speech sits well above it
+ * (soft word endings still reach about -30 dBFS). Filters cannot remove it, since
+ * it overlaps the voice, so the pauses are turned down instead: the gate closes
+ * to FLOOR when a 10 ms block and the one after it are both quiet, and opens when
+ * either is loud. Two thresholds (open higher than close) and a hold keep it from
+ * chattering on soft syllables, and the gain moves smoothly so no step is heard.
+ * State is carried across chunks because a word can span them.
+ */
+export function createNoiseGate(sampleRate) {
+  const OPEN = 0.022;
+  const CLOSE = 0.015;
+  const FLOOR = 0.2;
+  const HOLD = Math.round(0.06 * sampleRate);
+  const block = Math.round(0.01 * sampleRate);
+  const attack = 1 - Math.exp(-1 / (0.003 * sampleRate));
+  const release = 1 - Math.exp(-1 / (0.05 * sampleRate));
+  let gain = 1;
+  let open = true;
+  let hold = HOLD;
+
+  const rms = (data, from, to) => {
+    let sum = 0;
+    for (let i = from; i < to; i++) sum += data[i] * data[i];
+    return Math.sqrt(sum / Math.max(1, to - from));
+  };
+
+  // Gates one chunk of mono samples in place.
+  return function gate(data) {
+    const n = data.length;
+    for (let b = 0; b < n; b += block) {
+      const e = Math.min(n, b + block);
+      const level = Math.max(rms(data, b, e), e < n ? rms(data, e, Math.min(n, e + block)) : 0);
+      if (level > (open ? CLOSE : OPEN)) {
+        open = true;
+        hold = HOLD;
+      } else if (open) {
+        hold -= e - b;
+        if (hold <= 0) open = false;
+      }
+      const target = open ? 1 : FLOOR;
+      for (let i = b; i < e; i++) {
+        gain += (target - gain) * (target > gain ? attack : release);
+        data[i] *= gain;
+      }
+    }
+  };
+}
+
+/*
  * Streaming speech playback.
  *
  * The service can stream, and the difference dominates how quickly the bot
@@ -30,6 +80,7 @@ function createSpeechStream(ctx, sampleRate, channels) {
   // each chunk took to arrive.
   let cursor = 0;
   let leftover = new Uint8Array(0);
+  const gate = channels === 1 ? createNoiseGate(sampleRate) : null;
   const sources = [];
   let stopped = false;
 
@@ -92,6 +143,7 @@ function createSpeechStream(ctx, sampleRate, channels) {
         for (let i = 0; i < frames; i++) {
           out[i] = pcm.getInt16((i * channels + c) * 2, true) / 32768;
         }
+        if (gate) gate(out);
       }
 
       const src = ctx.createBufferSource();
