@@ -33,6 +33,39 @@ function createSpeechStream(ctx, sampleRate, channels) {
   const sources = [];
   let stopped = false;
 
+  // Everything plays through one chain: a fade gain, two filters, a compressor and
+  // a make-up gain.
+  // The fade ramps the reply in over FADE seconds (and out in finish()), because
+  // the samples do not start or end at zero, which clicks.
+  // The service's output carries a flat hiss from 300 Hz up past 16 kHz and a rumble
+  // under 100 Hz, while the voice has almost nothing above 8 kHz, so a high-pass
+  // and a low-pass take away the noise that sits outside the voice.
+  // The service also peak-normalises each reply, so one hard consonant sets the
+  // level; the compressor evens loud and soft words out. It is kept mild because
+  // its make-up gain raises the hiss between words along with the voice.
+  const FADE = 0.015;
+  const fade = ctx.createGain();
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 90;
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 8500;
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -20;
+  compressor.knee.value = 12;
+  compressor.ratio.value = 2;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.15;
+  const makeup = ctx.createGain();
+  makeup.gain.value = 1.4;
+  fade.connect(highpass);
+  highpass.connect(lowpass);
+  lowpass.connect(compressor);
+  compressor.connect(makeup);
+  makeup.connect(ctx.destination);
+  let faded = false;
+
   return {
     // Returns the time at which everything queued so far finishes.
     get endsAt() { return cursor; },
@@ -63,11 +96,16 @@ function createSpeechStream(ctx, sampleRate, channels) {
 
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(ctx.destination);
+      src.connect(fade);
       // A late first chunk (or a stall) leaves the cursor in the past;
       // restart from now, otherwise the audio would be scheduled for a
       // moment that has already gone and play all at once.
       const startAt = Math.max(cursor, ctx.currentTime);
+      if (!faded) {
+        faded = true;
+        fade.gain.setValueAtTime(0, startAt);
+        fade.gain.linearRampToValueAtTime(1, startAt + FADE);
+      }
       src.start(startAt);
       cursor = startAt + buf.duration;
       sources.push(src);
@@ -75,6 +113,15 @@ function createSpeechStream(ctx, sampleRate, channels) {
         const at = sources.indexOf(src);
         if (at >= 0) sources.splice(at, 1);
       };
+    },
+
+    // Called once the last chunk is queued: ramp to silence over the end of the
+    // audio so it does not stop on a non-zero sample.
+    finish() {
+      if (stopped || !faded) return;
+      const end = Math.max(cursor, ctx.currentTime + FADE);
+      fade.gain.setValueAtTime(1, end - FADE);
+      fade.gain.linearRampToValueAtTime(0, end);
     },
 
     stop() {
@@ -134,6 +181,7 @@ export async function speakStreaming(text, ctx, onStart, registerStop, meta) {
     }
   }
   if (!started) throw new Error('empty TTS stream');
+  stream.finish();
 
   // Wait out whatever is still queued. The cursor is on the context clock,
   // so this is the real remaining audio, not an estimate.
