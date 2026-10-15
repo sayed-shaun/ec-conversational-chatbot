@@ -56,7 +56,7 @@ class ChatbotSettings(BaseSettings):
     )
 
     MAX_HISTORY_TURNS: int = Field(
-        default=12,
+        default=20,
         ge=1,
         description=(
             "How many past user+assistant turns to keep per session " "before trimming."

@@ -13,7 +13,7 @@ class SearchParams(BaseModel):
     server-side CONFIDENCE_THRESHOLD).
     """
 
-    top_k: int = Field(default=10, ge=1, le=50)
+    top_k: int = Field(default=30, ge=1, le=50)
     min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     min_score_ratio: float = Field(default=1.0, ge=0.0)
     handle_unknown: bool = True

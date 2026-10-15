@@ -39,7 +39,7 @@ mcp = FastMCP(name="ec-faq-search")
 @mcp.tool
 def search_faq(
     question: str,
-    top_k: int = 10,
+    top_k: int = 30,
     min_score: float | None = None,
     min_score_ratio: float = 1.0,
     handle_unknown: bool = True,
@@ -55,7 +55,7 @@ def search_faq(
 
     Args:
         question: The user's raw question, in Bengali or English.
-        top_k: How many nearest-neighbour candidates to retrieve (default 10).
+        top_k: How many nearest-neighbour candidates to retrieve (default 30).
         min_score: Minimum cosine similarity for the best match to count as
             reliable. Overrides settings.CONFIDENCE_THRESHOLD for this call.
         min_score_ratio: Required margin between the best and second-best

@@ -72,26 +72,20 @@ class Chat:
         await checkpointer.delete(session_id)
 
     def trim(self) -> None:
-        """Keep the system prompt plus only the most recent turns, so the
-        context window doesn't grow unbounded over a long chat.
+        """Keep the system prompt plus the last MAX_HISTORY_TURNS user questions,
+        each with everything that followed it (tool calls, results, the reply),
+        so the context window doesn't grow unbounded over a long chat.
 
-        The window is deliberately not a plain tail slice. A raw slice can cut
-        between an assistant `tool_calls` message and the `tool` results
-        answering it, and an orphaned `tool` message is rejected by the
-        chat-completions API, which would break every later request in this
-        session. So the window is walked forward until it starts on a plain
-        user message.
+        A turn is one user question, however many messages it took to answer.
+        The window always starts on a user message, so it never cuts between an
+        assistant `tool_calls` message and the `tool` results answering it; an
+        orphaned `tool` message is rejected by the chat-completions API.
         """
         system_msg, rest = self.history[0], self.history[1:]
-        max_messages = settings.MAX_HISTORY_TURNS * 2
-        if len(rest) <= max_messages:
+        users = [i for i, m in enumerate(rest) if m.get("role") == "user"]
+        if len(users) <= settings.MAX_HISTORY_TURNS:
             return
-
-        rest = rest[-max_messages:]
-        start = 0
-        while start < len(rest) and rest[start].get("role") != "user":
-            start += 1
-        self.history = [system_msg] + rest[start:]
+        self.history = [system_msg] + rest[users[-settings.MAX_HISTORY_TURNS]:]
 
     def recent_user_text(self, turns: int = 3) -> str:
         """The last few things the user said, as context for the answer check."""

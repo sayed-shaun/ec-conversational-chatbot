@@ -38,7 +38,7 @@ TOOLS = [
                         "description": (
                             "How many nearest-neighbour candidates to fetch."
                         ),
-                        "default": 10,
+                        "default": 30,
                     },
                 },
                 "required": ["question"],
@@ -55,7 +55,7 @@ async def run_tool(
     which win over whatever top_k the model happened to ask for."""
     if name == "search_faq":
         overrides = dict(params or {})
-        top_k = overrides.pop("top_k", None) or 10
+        top_k = overrides.pop("top_k", None) or 30
         return await mcp_client.search_faq(
             args.get("question", fallback_question), top_k, **overrides
         )
