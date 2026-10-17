@@ -65,7 +65,8 @@ async def check_answer(result: dict, question: str) -> dict:
     """The search result with its answer swapped for the entry the model picked.
 
     If the model picks none, the reply becomes NO_INFO_REPLY and `confident` is
-    false. If the check cannot run, the search's own answer stands.
+    false. If it picks one, `check` holds its number (1 = the search's top match).
+    If the check cannot run, the search's own answer stands.
     """
     if not settings.ANSWER_CHECK or not isinstance(result, dict) or result.get("error"):
         return result
@@ -78,7 +79,10 @@ async def check_answer(result: dict, question: str) -> dict:
         response = await openai_client.async_client.chat.completions.create(
             model=openai_client.model,
             messages=[
-                {"role": "user", "content": PROMPT.format(question=question, options=options)}
+                {
+                    "role": "user",
+                    "content": PROMPT.format(question=question, options=options),
+                }
             ],
             temperature=0,
             max_tokens=8,
@@ -101,4 +105,5 @@ async def check_answer(result: dict, question: str) -> dict:
         "best_tag": picked["tag"],
         "best_answer": picked["answer"],
         "best_score": picked["score"],
+        "check": choice,
     }

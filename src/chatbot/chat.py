@@ -42,11 +42,16 @@ class Chat:
         self, text: str, message: str, params: dict | None
     ) -> tuple[str, str]:
         """The model answered without searching, which it sometimes does for a
-        real question. Search the user's own words anyway: a confident dataset
-        answer wins, otherwise the model's text stands (greetings, thanks,
-        refusals). Returns the reply and its tag."""
+        real question. Search the user's own words anyway: a dataset answer wins
+        only if the check confirmed the search's top match, otherwise the model's
+        text stands (greetings, thanks, refusals, a request to clarify). Returns
+        the reply and its tag."""
         result = await run_tool("search_faq", {"question": message}, message, params)
-        if isinstance(result, dict) and result.get("confident"):
+        if (
+            isinstance(result, dict)
+            and result.get("confident")
+            and result.get("check", 1) == 1
+        ):
             return exact_answer(result), result.get("best_tag") or ""
         return text, ""
 
