@@ -73,4 +73,9 @@ SYSTEM_PROMPT = (
     "বার্তা এই পরিসরের হলে আগে search_faq ডাকবে, আগের প্রত্যাখ্যান নকল করবে না।"
 )
 
-FALLBACK_REPLY = NO_INFO_REPLY
+# For a failure on our side (model or search service down, a tool error), not for
+# "no matching answer", which is NO_INFO_REPLY.
+FALLBACK_REPLY = (
+    "দুঃখিত, এই মুহূর্তে কারিগরি সমস্যা হচ্ছে। অনুগ্রহ করে কিছুক্ষণ পরে আবার চেষ্টা করুন "
+    "অথবা ০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
+)
