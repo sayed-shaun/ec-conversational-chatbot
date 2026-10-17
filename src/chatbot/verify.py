@@ -10,6 +10,7 @@ import re
 from typing import List, Optional
 
 from src.chatbot.client import openai_client
+from src.chatbot.prompt import VERIFY_PROMPT
 from src.core.config import chatbot_settings as settings
 from src.core.replies import NO_INFO_REPLY
 from src.core.logger import get_logger
@@ -17,16 +18,6 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 MAX_CANDIDATES = 8
-
-PROMPT = (
-    "ব্যবহারকারীর প্রশ্ন: {question}\n\n"
-    "তথ্যভান্ডারের সংরক্ষিত প্রশ্ন, সার্চের মিল অনুযায়ী সাজানো:\n{options}\n\n"
-    "কোন সংরক্ষিত প্রশ্নটি ব্যবহারকারীর প্রশ্নের একই বিষয় ও একই বিবরণ (দেশ, শহর, বয়স, "
-    "সংখ্যা) নিয়ে? শুধু শব্দ বা নামের কিছুটা মিল থাকলেই হবে না; বিষয় বা বিবরণ আলাদা হলে "
-    "মেলে না। বানান ভুল, ভিন্ন বানান বা উচ্চারণ অনুযায়ী লেখা শব্দ এবং বাড়তি কথা (যেমন অনুযোগ বা "
-    "সম্বোধন) উপেক্ষা করবে, অর্থ দেখবে। ১ নম্বর ঠিক মিললে সেটিই নাও।\n"
-    "শুধু একটি সংখ্যা লিখুন। কোনোটিই না মিললে ০ লিখুন।"
-)
 
 BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
@@ -52,6 +43,12 @@ def candidates(result: dict) -> List[dict]:
     return found[:MAX_CANDIDATES]
 
 
+def answer_start(answer: Optional[str], limit: int = 110) -> str:
+    """The first part of an answer on one line, enough to tell what kind it is."""
+    text = " ".join((answer or "").split())
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
 def parse_choice(reply: str, limit: int) -> Optional[int]:
     """The number the model chose (0 for none), or None if it gave no usable one."""
     match = re.search(r"\d+", (reply or "").translate(BN_DIGITS))
@@ -74,14 +71,17 @@ async def check_answer(result: dict, question: str) -> dict:
     if not found:
         return result
 
-    options = "\n".join(f"{i}. {c['question']}" for i, c in enumerate(found, 1))
+    options = "\n".join(
+        f"{i}. প্রশ্ন: {c['question']}\n   উত্তরের শুরু: {answer_start(c['answer'])}"
+        for i, c in enumerate(found, 1)
+    )
     try:
         response = await openai_client.async_client.chat.completions.create(
             model=openai_client.model,
             messages=[
                 {
                     "role": "user",
-                    "content": PROMPT.format(question=question, options=options),
+                    "content": VERIFY_PROMPT.format(question=question, options=options),
                 }
             ],
             temperature=0,
