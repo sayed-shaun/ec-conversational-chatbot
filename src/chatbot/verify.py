@@ -43,12 +43,6 @@ def candidates(result: dict) -> List[dict]:
     return found[:MAX_CANDIDATES]
 
 
-def answer_start(answer: Optional[str], limit: int = 110) -> str:
-    """The first part of an answer on one line, enough to tell what kind it is."""
-    text = " ".join((answer or "").split())
-    return text[:limit] + ("…" if len(text) > limit else "")
-
-
 def parse_choice(reply: str, limit: int) -> Optional[int]:
     """The number the model chose (0 for none), or None if it gave no usable one."""
     match = re.search(r"\d+", (reply or "").translate(BN_DIGITS))
@@ -71,10 +65,7 @@ async def check_answer(result: dict, question: str) -> dict:
     if not found:
         return result
 
-    options = "\n".join(
-        f"{i}. প্রশ্ন: {c['question']}\n   উত্তরের শুরু: {answer_start(c['answer'])}"
-        for i, c in enumerate(found, 1)
-    )
+    options = "\n".join(f"{i}. {c['question']}" for i, c in enumerate(found, 1))
     try:
         response = await openai_client.async_client.chat.completions.create(
             model=openai_client.model,
