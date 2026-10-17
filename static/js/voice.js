@@ -266,10 +266,14 @@ const VoiceMode = {
     // hangover bar, a loud one a higher bar, and neither is set by guessing
     // an absolute level.
     const SUSTAIN_X = 3, SUSTAIN_MIN = 0.008, SUSTAIN_PEAK_X = 0.18;
-    const BARGE_IN_X = 10, BARGE_IN_MIN = 0.025;
+    const BARGE_IN_X = 12, BARGE_IN_MIN = 0.035;
     const CONFIRM_MS = 60;
     const BURST_MS = 30;
     const BARGE_IN_GRACE_MS = 400;
+    // Interrupting the assistant must outlast a cough, a click or a door: a
+    // real interruption is speech, which holds the bar for a few hundred ms,
+    // where starting a turn on a quiet line only needs CONFIRM_MS.
+    const BARGE_IN_MS = 300;
     const SILENCE_MS = 1000;
     // Belt and braces, independent of every threshold above: however well
     // SUSTAIN is tuned, sustain-only frames must not be able to extend a
@@ -331,7 +335,8 @@ const VoiceMode = {
         burstStreakStart = level > burstBar ? (burstStreakStart ?? now) : null;
       }
       const loud =
-        (loudStreakStart !== null && now - loudStreakStart >= CONFIRM_MS) ||
+        (loudStreakStart !== null &&
+          now - loudStreakStart >= (this.speaking ? BARGE_IN_MS : CONFIRM_MS)) ||
         (burstStreakStart !== null && now - burstStreakStart >= BURST_MS);
       // Mid-utterance, a softer level is enough to hold the turn open. Not
       // while this.speaking: during playback only a real barge-in counts, or
