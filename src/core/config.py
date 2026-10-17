@@ -31,7 +31,6 @@ class ChatbotSettings(BaseSettings):
     TRACE_TTL_DAYS: int = Field(default=0, ge=0)
     TRACE_SWEEP_HOURS: int = Field(default=6, ge=1)
     ANSWER_CHECK: bool = Field(default=True)
-    ANSWER_CHECK_CANDIDATES: int = Field(default=8, ge=1)
     LLAMA_THINKING: bool = Field(
         default=False,
         description=(
@@ -77,7 +76,7 @@ class ChatbotSettings(BaseSettings):
     )
 
     SESSION_TTL_MINUTES: int = Field(
-        default=60,
+        default=10,
         description=(
             "Clear a conversation after this many idle minutes. "
             "0 or less keeps transcripts until reset explicitly."
@@ -144,15 +143,6 @@ class McpSettings(BaseSettings):
     TOPK_TIMEOUT: float = Field(
         default=10.0,
         description="Timeout in seconds for calls to TOPK_API.",
-    )
-    TOPK_ROWS: int = Field(
-        default=100,
-        ge=1,
-        le=100,
-        description=(
-            "Questions asked of TOPK_API per search. Many questions share a tag, "
-            "so a large number is needed to see enough distinct tags."
-        ),
     )
     CONFIDENCE_THRESHOLD: float = Field(
         default=0.55,

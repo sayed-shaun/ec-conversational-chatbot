@@ -26,12 +26,12 @@ from fastmcp import FastMCP
 
 from src.core.config import mcp_settings as settings
 from src.core.logger import get_logger
+from src.core.replies import NO_INFO_REPLY
 
 logger = get_logger(__name__)
 
-NOT_FOUND_ANSWER = (
-    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর পাওয়া যায়নি। " "০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
-)
+# The dataset entry for questions it cannot answer; its reply is our own sorry.
+UNABLE_TAG = "unable_to_answer"
 
 mcp = FastMCP(name="ec-faq-search")
 
@@ -39,7 +39,7 @@ mcp = FastMCP(name="ec-faq-search")
 @mcp.tool
 def search_faq(
     question: str,
-    top_k: int = 30,
+    top_k: int = 10,
     min_score: float | None = None,
     min_score_ratio: float = 1.0,
     handle_unknown: bool = True,
@@ -55,7 +55,7 @@ def search_faq(
 
     Args:
         question: The user's raw question, in Bengali or English.
-        top_k: How many nearest-neighbour candidates to retrieve (default 30).
+        top_k: How many nearest-neighbour candidates to retrieve (default 10).
         min_score: Minimum cosine similarity for the best match to count as
             reliable. Overrides settings.CONFIDENCE_THRESHOLD for this call.
         min_score_ratio: Required margin between the best and second-best
@@ -79,7 +79,7 @@ def search_faq(
     try:
         response = requests.post(
             settings.TOPK_API,
-            json={"question": question, "top_k": settings.TOPK_ROWS},
+            json={"question": question, "top_k": top_k},
             timeout=settings.TOPK_TIMEOUT,
         )
         response.raise_for_status()
@@ -116,6 +116,8 @@ def search_faq(
         )
         if not entry["answer"] and match.get("answer"):
             entry["answer"] = match["answer"]
+    if UNABLE_TAG in by_tag:
+        by_tag[UNABLE_TAG]["answer"] = NO_INFO_REPLY
     enriched = [e for e in by_tag.values() if e["answer"]][:top_k]
     skipped = len(by_tag) - len([e for e in by_tag.values() if e["answer"]])
     if skipped:
@@ -140,7 +142,7 @@ def search_faq(
 
     best_answer = best["answer"]
     if not confident and handle_unknown:
-        best_answer = NOT_FOUND_ANSWER
+        best_answer = NO_INFO_REPLY
 
     return {
         "input_question": data.get("input_question", question),

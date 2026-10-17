@@ -8,6 +8,7 @@ between "the model asked for something" and "the MCP server did it".
 """
 
 from src.chatbot.client import mcp_client
+from src.chatbot.verify import check_answer
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -38,7 +39,7 @@ TOOLS = [
                         "description": (
                             "How many nearest-neighbour candidates to fetch."
                         ),
-                        "default": 30,
+                        "default": 10,
                     },
                 },
                 "required": ["question"],
@@ -55,10 +56,10 @@ async def run_tool(
     which win over whatever top_k the model happened to ask for."""
     if name == "search_faq":
         overrides = dict(params or {})
-        top_k = overrides.pop("top_k", None) or 30
-        return await mcp_client.search_faq(
-            args.get("question", fallback_question), top_k, **overrides
-        )
+        top_k = overrides.pop("top_k", None) or 10
+        question = args.get("question", fallback_question)
+        result = await mcp_client.search_faq(question, top_k, **overrides)
+        return await check_answer(result, question)
     logger.warning("model requested unknown tool: %s", name)
     return {"error": f"unknown tool: {name}"}
 

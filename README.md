@@ -143,7 +143,7 @@ actually touch:
 | `TOPK_API` | required | Embedding search API; also supplies the answers |
 | `CONFIDENCE_THRESHOLD` | `0.55` | Below this cosine score, admit uncertainty |
 | `MAX_HISTORY_TURNS` | `20` | User questions kept per session, with their tool calls and answers (turn-count, not tokens) |
-| `SESSION_TTL_MINUTES` | `60` | Idle timeout before a transcript is deleted; `0` disables |
+| `SESSION_TTL_MINUTES` | `10` | Idle timeout before a transcript is deleted; `0` disables |
 | `CORS_ALLOW_ORIGINS` | `*` | Tighten once the UI's origin is known |
 | `PORT` | `8000` | The only port published on the host |
 | `SPEECH_API` | empty | Speech service behind `/api/v1/asr` and `/api/v1/tts` |
@@ -184,7 +184,7 @@ from fastmcp import Client
 async def main():
     async with Client("http://ec-faq-mcp:9000/mcp") as client:
         print("Tools:", [t.name for t in await client.list_tools()])
-        result = await client.call_tool("search_faq", {"question": "hi", "top_k": 30})
+        result = await client.call_tool("search_faq", {"question": "hi", "top_k": 10})
         print(json.dumps(result.data, ensure_ascii=False, indent=2))
 
 asyncio.run(main())

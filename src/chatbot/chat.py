@@ -16,7 +16,6 @@ from typing import AsyncIterator, Dict, List
 from src.chatbot.checkpointer import checkpointer
 from src.chatbot.client import openai_client
 from src.chatbot.prompt import FALLBACK_REPLY, SYSTEM_PROMPT
-from src.chatbot.verify import check_answer
 from src.chatbot.tools import TOOLS, run_tool, tool_summary
 from src.core.config import chatbot_settings as settings
 from src.core.logger import get_logger
@@ -38,6 +37,18 @@ def exact_answer(result: dict) -> str:
 
 class Chat:
     """One conversation, identified by its session id."""
+
+    async def reply_without_tool(
+        self, text: str, message: str, params: dict | None
+    ) -> tuple[str, str]:
+        """The model answered without searching, which it sometimes does for a
+        real question. Search the user's own words anyway: a confident dataset
+        answer wins, otherwise the model's text stands (greetings, thanks,
+        refusals). Returns the reply and its tag."""
+        result = await run_tool("search_faq", {"question": message}, message, params)
+        if isinstance(result, dict) and result.get("confident"):
+            return exact_answer(result), result.get("best_tag") or ""
+        return text, ""
 
     def __init__(self, session_id: str, history: List[dict]) -> None:
         self.session_id = session_id
@@ -86,20 +97,7 @@ class Chat:
         users = [i for i, m in enumerate(rest) if m.get("role") == "user"]
         if len(users) <= settings.MAX_HISTORY_TURNS:
             return
-        self.history = [system_msg] + rest[users[-settings.MAX_HISTORY_TURNS]:]
-
-    def recent_user_text(self, turns: int = 3) -> str:
-        """The last few things the user said, as context for the answer check."""
-        users = [m["content"] for m in self.history if m.get("role") == "user"]
-        return "\n".join(users[-turns:])
-
-    async def checked(self, name: str, args: dict, result: dict, message: str) -> dict:
-        """Run the answer check on a search result; other tools pass through."""
-        if name != "search_faq" or not settings.ANSWER_CHECK:
-            return result
-        return await check_answer(
-            result, args.get("question") or message, self.recent_user_text()
-        )
+        self.history = [system_msg] + rest[users[-settings.MAX_HISTORY_TURNS] :]
 
     async def save(self) -> None:
         """Checkpoint the transcript, or end the chat when it has used up its
@@ -129,7 +127,9 @@ class Chat:
                 break
 
             if not msg.tool_calls:
-                reply_text = msg.content or ""
+                reply_text, self.last_tag = await self.reply_without_tool(
+                    msg.content or "", message, params
+                )
                 self.history.append({"role": "assistant", "content": reply_text})
                 break
 
@@ -154,7 +154,6 @@ class Chat:
                     self.session_id,
                 )
                 result = await run_tool(tool_call.function.name, args, message, params)
-                result = await self.checked(tool_call.function.name, args, result, message)
                 self.history.append(
                     {
                         "role": "tool",
@@ -164,7 +163,11 @@ class Chat:
                 )
                 if tool_call.function.name == "search_faq":
                     exact = exact_answer(result)
-                    self.last_tag = (result.get("best_tag") or "") if result.get("confident") else ""
+                    self.last_tag = (
+                        (result.get("best_tag") or "")
+                        if result.get("confident")
+                        else ""
+                    )
 
             if exact is not None:
                 reply_text = exact
@@ -203,13 +206,14 @@ class Chat:
         served_tag = ""
 
         def spent(stage: str, since: float) -> None:
-            timings[stage] = timings.get(stage, 0) + (time.perf_counter() - since) * 1000
+            timings[stage] = (
+                timings.get(stage, 0) + (time.perf_counter() - since) * 1000
+            )
 
         reply_text = ""
         for hop in range(settings.MAX_TOOL_HOPS):
             content_parts: List[str] = []
             pending: Dict[int, dict] = {}
-            streamed_any_token = False
             exact = None
 
             llm_started = time.perf_counter()
@@ -230,8 +234,6 @@ class Chat:
 
                     if delta.content:
                         content_parts.append(delta.content)
-                        streamed_any_token = True
-                        yield {"type": "token", "text": delta.content}
 
                     for tc in delta.tool_calls or []:
                         slot = pending.setdefault(
@@ -244,25 +246,26 @@ class Chat:
                                 slot["name"] = tc.function.name
                             if tc.function.arguments:
                                 slot["arguments"] += tc.function.arguments
-            except Exception as exc:
+            except Exception:
                 spent("llm", llm_started)
                 logger.exception(
                     "llama-server stream failed session=%s", self.session_id
                 )
-                if streamed_any_token:
-                    yield {"type": "error", "message": str(exc)}
-                    reply_text = "".join(content_parts)
-                else:
-                    reply_text = FALLBACK_REPLY
-                    yield {"type": "token", "text": reply_text}
+                reply_text = FALLBACK_REPLY
+                yield {"type": "token", "text": reply_text}
                 self.history.append({"role": "assistant", "content": reply_text})
                 break
 
             spent("llm", llm_started)
 
             if not pending:
-                reply_text = "".join(content_parts)
+                searched = time.perf_counter()
+                reply_text, served_tag = await self.reply_without_tool(
+                    "".join(content_parts), message, params
+                )
+                spent("search", searched)
                 self.history.append({"role": "assistant", "content": reply_text})
+                yield {"type": "token", "text": reply_text}
                 break
 
             ordered = [pending[i] for i in sorted(pending)]
@@ -305,9 +308,6 @@ class Chat:
                 tool_started = time.perf_counter()
                 result = await run_tool(tc["name"], args, message, params)
                 spent("search", tool_started)
-                check_started = time.perf_counter()
-                result = await self.checked(tc["name"], args, result, message)
-                spent("check", check_started)
                 yield {"type": "tool_result", **tool_summary(tc["name"], result)}
 
                 self.history.append(
@@ -319,9 +319,13 @@ class Chat:
                 )
                 if tc["name"] == "search_faq":
                     exact = exact_answer(result)
-                    # Only an answer the search and the check both stood behind is
-                    # worth caching as speech; a decline or a model reply has no tag.
-                    served_tag = (result.get("best_tag") or "") if result.get("confident") else ""
+                    # Only a confident search answer is worth caching as speech;
+                    # a decline or a model reply has no tag.
+                    served_tag = (
+                        (result.get("best_tag") or "")
+                        if result.get("confident")
+                        else ""
+                    )
 
             if exact is not None:
                 reply_text = exact

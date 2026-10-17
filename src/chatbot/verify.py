@@ -1,11 +1,9 @@
 """Answer check: does a retrieved entry really ask what the user asked?
 
-The search scores every match 0.96-0.99, wrong ones included, so the score cannot
-say "nothing here answers this". "রোমানিয়া কি দূতাবাস আছে" came back as the Rome
-entry, and "মিয়ামি" as Malaysia. After the search the model reads the user's
-question against the matched questions and picks the one that means the same, or
-none. The reply is then that entry's dataset answer, word for word; the model
-never writes it.
+The search scores wrong matches as high as right ones (0.96-0.99), so the score
+cannot say "nothing here answers this". After the search the model reads the
+user's question against the matched questions and picks the one that means the
+same, or none. The reply is still that entry's dataset answer, word for word.
 """
 
 import re
@@ -13,55 +11,35 @@ from typing import List, Optional
 
 from src.chatbot.client import openai_client
 from src.core.config import chatbot_settings as settings
+from src.core.replies import NO_INFO_REPLY
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-NO_MATCH_REPLY = (
-    "দুঃখিত, এই বিষয়ে নির্দিষ্ট উত্তর আমার কাছে নেই। অনুগ্রহ করে ০ চেপে "
-    "সরাসরি আমাদের প্রতিনিধির সাথে কথা বলুন।"
-)
+MAX_CANDIDATES = 8
 
 PROMPT = (
-    "ব্যবহারকারীর সাম্প্রতিক কথা:\n{context}\n\n"
-    "ব্যবহারকারীর পূর্ণ প্রশ্ন: {question}\n\n"
-    "নিচে তথ্যভান্ডারের কয়েকটি সংরক্ষিত প্রশ্ন ও তাদের উত্তরের শুরু, সার্চের মিল অনুযায়ী সাজানো "
-    "(১ নম্বর সার্চের সবচেয়ে কাছের)। ঠিক কোনটি ব্যবহারকারীর প্রশ্নের উত্তর দেয় বেছে নাও।\n"
-    "- আগে দেখো ব্যবহারকারী কী করতে বা জানতে চান (কোন সেবা বা বিষয়, কী ধরনের তথ্য) — সেটি "
-    "মিলতে হবে। তারপর দেখো তাঁর বলা বিবরণ (দেশ, শহর, বয়স, সংখ্যা, ধাপ) তার সাথে বিরোধ করছে "
-    "কিনা।\n"
-    "- বিষয় বা কাজ আলাদা হলে মেলে না, বিবরণ মিললেও। আবার বিষয় মিললেও বিবরণ আলাদা হলে (অন্য "
-    "দেশ বা শহর, অন্য সংখ্যা) মেলে না। শুধু শব্দ বা নামের কিছুটা মিল থাকলেই হবে না।\n"
-    "- ব্যবহারকারী যা বলেননি তা ধরে নেবে না। আগের কথা শুধু বুঝতে সাহায্য করবে, নতুন তথ্য "
-    "যোগ করবে না।\n"
-    "- ১ নম্বর ঠিক মিললে সেটিই নাও। অন্যটি তখনই নাও যখন সেটি স্পষ্টভাবে বেশি ভালো মেলে।\n\n"
-    "{options}\n\n"
-    "শুধু একটি সংখ্যা লিখুন। কোনোটিই ঠিক না মিললে ০ লিখুন।"
-)
-
-DECLINE_PROMPT = (
-    "তুমি বাংলাদেশ নির্বাচন কমিশনের এনআইডি ও ভোটার সেবার সহকারী। ব্যবহারকারীর প্রশ্নের সরাসরি "
-    "উত্তর আমাদের তথ্যভান্ডারে নেই। নিচের প্রশ্নগুলো সবচেয়ে কাছের, কিন্তু সেগুলো ব্যবহারকারীর "
-    "প্রশ্নের উত্তর নয়।\n\nব্যবহারকারীর সাম্প্রতিক কথা:\n{context}\n\n"
-    "ব্যবহারকারীর প্রশ্ন: {question}\n\nকাছের প্রশ্ন:\n{options}\n\n"
-    "এক-দুই বাক্যে স্বাভাবিক বাংলায় বলো যে ব্যবহারকারী যে নির্দিষ্ট বিষয়, দেশ বা শহরের কথা "
-    "জিজ্ঞাসা করেছেন (নাম উল্লেখ করে) সে সম্পর্কে আমাদের কাছে তথ্য নেই। তথ্যভান্ডারে স্পষ্ট "
-    "না থাকলে \"নেই\" বা \"হয় না\" বলে কিছু নিশ্চিত করবে না, শুধু বলবে তথ্য নেই। শেষে "
-    "০ চেপে সরাসরি আমাদের প্রতিনিধির সাথে কথা বলতে বলো। কাছের প্রশ্নের উত্তর বানিয়ে বলবে না।"
+    "ব্যবহারকারীর প্রশ্ন: {question}\n\n"
+    "তথ্যভান্ডারের সংরক্ষিত প্রশ্ন, সার্চের মিল অনুযায়ী সাজানো:\n{options}\n\n"
+    "কোন সংরক্ষিত প্রশ্নটি ব্যবহারকারীর প্রশ্নের একই বিষয় ও একই বিবরণ (দেশ, শহর, বয়স, "
+    "সংখ্যা) নিয়ে? শুধু শব্দ বা নামের কিছুটা মিল থাকলেই হবে না; বিষয় বা বিবরণ আলাদা হলে "
+    "মেলে না। বানান ভুল, ভিন্ন বানান বা উচ্চারণ অনুযায়ী লেখা শব্দ এবং বাড়তি কথা (যেমন অনুযোগ বা "
+    "সম্বোধন) উপেক্ষা করবে, অর্থ দেখবে। ১ নম্বর ঠিক মিললে সেটিই নাও।\n"
+    "শুধু একটি সংখ্যা লিখুন। কোনোটিই না মিললে ০ লিখুন।"
 )
 
 BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
-def top_candidates(result: dict) -> List[dict]:
-    """Best match first, then the alternatives, each with its question and answer."""
+def candidates(result: dict) -> List[dict]:
+    """The best match, then the alternatives, as {tag, question, answer, score}."""
     best = {
         "tag": result.get("best_tag"),
         "question": result.get("best_question"),
         "answer": result.get("best_answer"),
         "score": result.get("best_score"),
     }
-    rest = [
+    others = [
         {
             "tag": alt.get("tag"),
             "question": alt.get("matched_question"),
@@ -70,106 +48,57 @@ def top_candidates(result: dict) -> List[dict]:
         }
         for alt in result.get("alternatives") or []
     ]
-    found = [c for c in [best, *rest] if c["tag"] and c["question"]]
-    return found[: settings.ANSWER_CHECK_CANDIDATES]
+    found = [c for c in [best, *others] if c["tag"] and c["question"]]
+    return found[:MAX_CANDIDATES]
 
 
-def start(answer: Optional[str], limit: int = 140) -> str:
-    """The first part of an answer on one line, enough to tell what it is about."""
-    text = " ".join((answer or "").split())
-    return text[:limit] + ("…" if len(text) > limit else "")
-
-
-def parse(reply: str, limit: int) -> Optional[int]:
-    """The chosen number, 0 for none, or None when the reply holds no number."""
+def parse_choice(reply: str, limit: int) -> Optional[int]:
+    """The number the model chose (0 for none), or None if it gave no usable one."""
     match = re.search(r"\d+", (reply or "").translate(BN_DIGITS))
     if not match:
         return None
-    number = int(match.group())
-    return number if 0 <= number <= limit else None
+    choice = int(match.group())
+    return choice if choice <= limit else None
 
 
-async def decline_reply(question: str, context: str, candidates: List[dict]) -> str:
-    """A short, natural no-information reply that names what the user asked about.
-
-    Falls back to the fixed sorry if the model gives nothing usable.
-    """
-    options = "\n".join(f"- {c['question']}" for c in candidates[:3])
-    prompt = DECLINE_PROMPT.format(
-        context=context or question, question=question, options=options
-    )
-    try:
-        response = await openai_client.async_client.chat.completions.create(
-            model=openai_client.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=160,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-        )
-        text = (response.choices[0].message.content or "").strip()
-    except Exception:
-        logger.exception("decline reply failed; using the fixed sorry")
-        return NO_MATCH_REPLY
-    return text or NO_MATCH_REPLY
-
-
-async def check_answer(result: dict, question: str, context: str) -> dict:
+async def check_answer(result: dict, question: str) -> dict:
     """The search result with its answer swapped for the entry the model picked.
 
-    When the model picks none, the reply becomes a sorry and `confident` is false.
-    If the check cannot run (model error, no usable reply) the search's own best
-    answer stands, so a failing check never takes the bot down.
+    If the model picks none, the reply becomes NO_INFO_REPLY and `confident` is
+    false. If the check cannot run, the search's own answer stands.
     """
-    if not isinstance(result, dict) or result.get("error"):
+    if not settings.ANSWER_CHECK or not isinstance(result, dict) or result.get("error"):
         return result
-    candidates = top_candidates(result)
-    if len(candidates) < 1:
+    found = candidates(result)
+    if not found:
         return result
 
-    options = "\n".join(
-        f"{i}. প্রশ্ন: {c['question']}\n   উত্তরের শুরু: {start(c['answer'])}"
-        for i, c in enumerate(candidates, 1)
-    )
-    prompt = PROMPT.format(
-        context=context or question, question=question, options=options
-    )
+    options = "\n".join(f"{i}. {c['question']}" for i, c in enumerate(found, 1))
     try:
         response = await openai_client.async_client.chat.completions.create(
             model=openai_client.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "user", "content": PROMPT.format(question=question, options=options)}
+            ],
             temperature=0,
             max_tokens=8,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
-        choice = parse(response.choices[0].message.content, len(candidates))
+        choice = parse_choice(response.choices[0].message.content, len(found))
     except Exception:
         logger.exception("answer check failed; keeping the search's best answer")
         return result
     if choice is None:
-        logger.warning("answer check gave no usable number; keeping the best answer")
         return result
 
     if choice == 0:
-        logger.info("answer check: no candidate matches %r", question)
-        return {
-            **result,
-            "confident": False,
-            "best_answer": await decline_reply(question, context, candidates),
-            "check": "none",
-        }
+        logger.info("answer check: no match for %r", question)
+        return {**result, "confident": False, "best_answer": NO_INFO_REPLY}
 
-    picked = candidates[choice - 1]
-    if choice != 1:
-        logger.info(
-            "answer check: picked #%d %s over %s",
-            choice,
-            picked["tag"],
-            candidates[0]["tag"],
-        )
+    picked = found[choice - 1]
     return {
         **result,
         "best_tag": picked["tag"],
         "best_answer": picked["answer"],
         "best_score": picked["score"],
-        "check": choice,
     }

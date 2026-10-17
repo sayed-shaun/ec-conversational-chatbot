@@ -129,7 +129,7 @@ class McpClient:
             logger.exception("MCP server call failed")
             return {"error": f"could not reach MCP server: {exc}"}
 
-    async def search_faq(self, question: str, top_k: int = 30, **overrides) -> dict:
+    async def search_faq(self, question: str, top_k: int = 10, **overrides) -> dict:
         """Search the FAQ knowledge base via the MCP `search_faq` tool."""
         arguments = {"question": question, "top_k": top_k}
         arguments.update({k: v for k, v in overrides.items() if v is not None})
